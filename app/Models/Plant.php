@@ -1,0 +1,69 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+
+class Plant extends Model
+{
+    use HasFactory, SoftDeletes;
+
+    protected $fillable = [
+        'organization_id',
+        'code',
+        'name',
+        'slug',
+        'description',
+        'address_line_1',
+        'address_line_2',
+        'city',
+        'state',
+        'postal_code',
+        'country',
+        'phone',
+        'email',
+        'manager_name',
+        'status',
+        'is_default',
+    ];
+
+    /**
+     * Get the attributes that should be cast.
+     *
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'is_default' => 'boolean',
+        ];
+    }
+
+    /**
+     * The "booted" method of the model.
+     */
+    protected static function booted(): void
+    {
+        static::saving(function (Plant $plant) {
+            // If the plant is marked as default, ensure all other plants in the same organization are not default.
+            if ($plant->is_default) {
+                static::withoutEvents(function () use ($plant) {
+                    static::where('organization_id', $plant->organization_id)
+                        ->where('id', '!=', $plant->id)
+                        ->update(['is_default' => false]);
+                });
+            }
+        });
+    }
+
+    /**
+     * Get the organization that owns the plant.
+     */
+    public function organization(): BelongsTo
+    {
+        return $this->belongsTo(Organization::class);
+    }
+}
