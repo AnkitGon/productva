@@ -13,8 +13,10 @@ import {
     DialogDescription,
     DialogFooter,
 } from '@/components/ui/dialog';
+import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import { Plus, Pencil, Trash2, Search, ChevronDown, ChevronRight, AlertTriangle, ShieldAlert } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useCan } from '@/hooks/use-can';
 
 interface Permission {
     id: number;
@@ -36,6 +38,10 @@ interface Props {
 }
 
 export default function RolesIndex({ roles, permissions }: Props) {
+    const { can } = useCan();
+    const canCreateRole = can('roles.create');
+    const canUpdateRole = can('roles.update');
+    const canDeleteRole = can('roles.delete');
     const [selectedRole, setSelectedRole] = useState<Role | null>(roles[0] || null);
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [deleteConfirmRoleId, setDeleteConfirmRoleId] = useState<number | null>(null);
@@ -65,7 +71,7 @@ export default function RolesIndex({ roles, permissions }: Props) {
 
     const handleEditSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!selectedRole) return;
+        if (!selectedRole || !canUpdateRole) return;
         editForm.put(`/admin/roles/${selectedRole.id}`, {
             onSuccess: () => {
                 // Refresh local states if needed
@@ -214,14 +220,16 @@ export default function RolesIndex({ roles, permissions }: Props) {
                             <h2 className="text-lg font-semibold">Roles</h2>
                             <p className="text-xs text-muted-foreground">Manage user access groups</p>
                         </div>
-                        <Button 
-                            onClick={() => setIsCreateOpen(true)}
-                            size="sm"
-                            className="flex items-center gap-1.5"
-                        >
-                            <Plus className="size-4" />
-                            Create Role
-                        </Button>
+                        {canCreateRole && (
+                            <Button 
+                                onClick={() => setIsCreateOpen(true)}
+                                size="sm"
+                                className="flex items-center gap-1.5"
+                            >
+                                <Plus className="size-4" />
+                                Create Role
+                            </Button>
+                        )}
                     </div>
                     <div className="flex-1 overflow-y-auto p-2 space-y-1">
                         {roles.map(role => (
@@ -236,7 +244,7 @@ export default function RolesIndex({ roles, permissions }: Props) {
                                 )}
                             >
                                 <span className="truncate">{role.name}</span>
-                                {role.slug !== 'super-admin' && role.slug !== 'admin' && (
+                                {canDeleteRole && role.slug !== 'super-admin' && role.slug !== 'admin' && (
                                     <button
                                         type="button"
                                         onClick={(e) => {
@@ -264,16 +272,20 @@ export default function RolesIndex({ roles, permissions }: Props) {
                             <div className="p-4 border-b border-border/60 flex items-center justify-between">
                                 <div>
                                     <h2 className="text-lg font-semibold">Role Details</h2>
-                                    <p className="text-xs text-muted-foreground">Edit metadata and permissions</p>
+                                    <p className="text-xs text-muted-foreground">
+                                        {canUpdateRole ? 'Edit metadata and permissions' : 'View role metadata and permissions'}
+                                    </p>
                                 </div>
-                                <Button 
-                                    type="submit" 
-                                    disabled={editForm.processing}
-                                    size="sm"
-                                    className="min-w-[100px]"
-                                >
-                                    {editForm.processing ? "Saving..." : "Save Changes"}
-                                </Button>
+                                {canUpdateRole && (
+                                    <Button 
+                                        type="submit" 
+                                        disabled={editForm.processing}
+                                        size="sm"
+                                        className="min-w-[100px]"
+                                    >
+                                        {editForm.processing ? "Saving..." : "Save Changes"}
+                                    </Button>
+                                )}
                             </div>
 
                             <div className="flex-1 overflow-y-auto p-6 space-y-6">
@@ -284,7 +296,7 @@ export default function RolesIndex({ roles, permissions }: Props) {
                                             id="role-name"
                                             value={editForm.data.name}
                                             onChange={(e) => editForm.setData('name', e.target.value)}
-                                            disabled={selectedRole.slug === 'super-admin' || selectedRole.slug === 'admin'}
+                                            disabled={!canUpdateRole || selectedRole.slug === 'super-admin' || selectedRole.slug === 'admin'}
                                             required
                                         />
                                         {editForm.errors.name && (
@@ -298,6 +310,7 @@ export default function RolesIndex({ roles, permissions }: Props) {
                                             value={editForm.data.description}
                                             onChange={(e) => editForm.setData('description', e.target.value)}
                                             placeholder="Enter brief role description"
+                                            disabled={!canUpdateRole || selectedRole.slug === 'super-admin' || selectedRole.slug === 'admin'}
                                         />
                                         {editForm.errors.description && (
                                             <p className="text-xs text-red-500">{editForm.errors.description}</p>
@@ -309,7 +322,9 @@ export default function RolesIndex({ roles, permissions }: Props) {
                                     <div className="flex items-center justify-between gap-4 flex-wrap">
                                         <div>
                                             <h3 className="text-md font-semibold">Permissions</h3>
-                                            <p className="text-xs text-muted-foreground">Assign permissions to this role</p>
+                                            <p className="text-xs text-muted-foreground">
+                                                {canUpdateRole ? 'Assign permissions to this role' : 'Permissions assigned to this role'}
+                                            </p>
                                         </div>
 
                                         <div className="flex items-center gap-4">
@@ -324,17 +339,19 @@ export default function RolesIndex({ roles, permissions }: Props) {
                                                 />
                                             </div>
                                             
-                                            <div className="flex items-center gap-2 border border-border/60 px-3 py-1.5 rounded-lg bg-muted/40">
-                                                <Checkbox
-                                                    id="select-all-global"
-                                                    checked={isAllChecked ? true : isAllPartiallyChecked ? 'indeterminate' : false}
-                                                    onCheckedChange={(checked) => handleSelectAllToggle(checked === true)}
-                                                    disabled={selectedRole.slug === 'super-admin'}
-                                                />
-                                                <Label htmlFor="select-all-global" className="text-xs font-semibold cursor-pointer select-none">
-                                                    Select All
-                                                </Label>
-                                            </div>
+                                            {canUpdateRole && (
+                                                <div className="flex items-center gap-2 border border-border/60 px-3 py-1.5 rounded-lg bg-muted/40">
+                                                    <Checkbox
+                                                        id="select-all-global"
+                                                        checked={isAllChecked ? true : isAllPartiallyChecked ? 'indeterminate' : false}
+                                                        onCheckedChange={(checked) => handleSelectAllToggle(checked === true)}
+                                                        disabled={selectedRole.slug === 'super-admin'}
+                                                    />
+                                                    <Label htmlFor="select-all-global" className="text-xs font-semibold cursor-pointer select-none">
+                                                        Select All
+                                                    </Label>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
 
@@ -362,7 +379,7 @@ export default function RolesIndex({ roles, permissions }: Props) {
                                                                 id={`group-${key}`}
                                                                 checked={isGroupFullyChecked(group.permissions) ? true : isGroupPartiallyChecked(group.permissions) ? 'indeterminate' : false}
                                                                 onCheckedChange={(checked) => handleGroupToggle(group.permissions, checked === true)}
-                                                                disabled={selectedRole.slug === 'super-admin'}
+                                                                disabled={!canUpdateRole || selectedRole.slug === 'super-admin'}
                                                             />
                                                             <Label htmlFor={`group-${key}`} className="text-sm font-semibold cursor-pointer select-none">
                                                                 {group.label}
@@ -385,7 +402,7 @@ export default function RolesIndex({ roles, permissions }: Props) {
                                                                             id={`perm-${p.id}`}
                                                                             checked={editForm.data.permissions.includes(p.id)}
                                                                             onCheckedChange={(checked) => handlePermissionToggle(p.id, checked === true)}
-                                                                            disabled={selectedRole.slug === 'super-admin'}
+                                                                            disabled={!canUpdateRole || selectedRole.slug === 'super-admin'}
                                                                             className="mt-0.5"
                                                                         />
                                                                         <div className="grid gap-0.5 leading-none">
@@ -495,52 +512,33 @@ export default function RolesIndex({ roles, permissions }: Props) {
                 </DialogContent>
             </Dialog>
 
-            {/* Delete Dialog */}
-            <Dialog open={deleteConfirmRoleId !== null} onOpenChange={(open) => !open && setDeleteConfirmRoleId(null)}>
-                <DialogContent className="max-w-md">
-                    <DialogHeader>
-                        <DialogTitle>Delete Role</DialogTitle>
-                        <DialogDescription>
-                            Are you sure you want to delete this role? Any users assigned to this role will lose their associated permissions. This action cannot be undone.
-                        </DialogDescription>
-                    </DialogHeader>
-                    <DialogFooter className="mt-4">
-                        <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => setDeleteConfirmRoleId(null)}
-                        >
-                            Cancel
-                        </Button>
-                        <Button
-                            type="button"
-                            variant="destructive"
-                            onClick={() => {
-                                if (deleteConfirmRoleId) {
-                                    router.delete(`/admin/roles/${deleteConfirmRoleId}`, {
-                                        onSuccess: () => {
-                                            setDeleteConfirmRoleId(null);
-                                            if (selectedRole?.id === deleteConfirmRoleId) {
-                                                const next = roles.find(r => r.id !== deleteConfirmRoleId) || null;
-                                                setSelectedRole(next);
-                                                if (next) {
-                                                    editForm.setData({
-                                                        name: next.name,
-                                                        description: next.description || '',
-                                                        permissions: next.permissions.map(p => p.id),
-                                                    });
-                                                }
-                                            }
-                                        },
+            <ConfirmDeleteDialog
+                open={deleteConfirmRoleId !== null}
+                onOpenChange={(open) => !open && setDeleteConfirmRoleId(null)}
+                title="Delete Role?"
+                description="Are you sure you want to delete this role? Any users assigned to this role will lose their associated permissions. This action cannot be undone."
+                confirmLabel="Delete Role"
+                onConfirm={() => {
+                    if (!deleteConfirmRoleId) return;
+                    router.delete(`/admin/roles/${deleteConfirmRoleId}`, {
+                        onSuccess: () => {
+                            const deletedId = deleteConfirmRoleId;
+                            setDeleteConfirmRoleId(null);
+                            if (selectedRole?.id === deletedId) {
+                                const next = roles.find((r) => r.id !== deletedId) || null;
+                                setSelectedRole(next);
+                                if (next) {
+                                    editForm.setData({
+                                        name: next.name,
+                                        description: next.description || '',
+                                        permissions: next.permissions.map((p) => p.id),
                                     });
                                 }
-                            }}
-                        >
-                            Delete Role
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
+                            }
+                        },
+                    });
+                }}
+            />
         </>
     );
 }

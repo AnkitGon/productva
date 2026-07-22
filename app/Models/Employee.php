@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToActivePlant;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -10,7 +11,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Employee extends Model
 {
-    use HasFactory, SoftDeletes;
+    use BelongsToActivePlant, HasFactory, SoftDeletes;
 
     protected $fillable = [
         'employee_code',
@@ -32,7 +33,7 @@ class Employee extends Model
         'user_id',
     ];
 
-    protected $appends = ['name'];
+    protected $appends = ['name', 'photo_url'];
 
     /**
      * Get the employee's full name.
@@ -40,6 +41,19 @@ class Employee extends Model
     public function getNameAttribute(): string
     {
         return "{$this->first_name} {$this->last_name}";
+    }
+
+    /**
+     * Public URL for the employee photo.
+     */
+    public function getPhotoUrlAttribute(): ?string
+    {
+        if (! $this->photo_path) {
+            return null;
+        }
+
+        // Root-relative so images work regardless of APP_URL / local domain.
+        return '/storage/'.ltrim($this->photo_path, '/');
     }
 
     public function organization(): BelongsTo

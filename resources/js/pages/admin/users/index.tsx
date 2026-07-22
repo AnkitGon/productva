@@ -11,8 +11,10 @@ import {
     DialogTitle,
     DialogFooter,
 } from '@/components/ui/dialog';
+import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import { Plus, Edit, Trash2 } from 'lucide-react';
 import type { User } from '@/types/auth';
+import { useCan } from '@/hooks/use-can';
 
 interface PaginatedUsers {
     data: User[];
@@ -27,8 +29,14 @@ interface Props {
 }
 
 export default function UserIndex({ users }: Props) {
+    const { can } = useCan();
+    const canInviteUser = can('users.invite');
+    const canUpdateUser = can('users.update');
+    const canDeleteUser = can('users.delete');
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [editingUser, setEditingUser] = useState<User | null>(null);
+    const [deleteUser, setDeleteUser] = useState<User | null>(null);
+    const [isDeleting, setIsDeleting] = useState(false);
 
     const createForm = useForm({
         name: '',
@@ -54,20 +62,15 @@ export default function UserIndex({ users }: Props) {
 
     const handleEditSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!editingUser) return;
-
+        if (!editingUser) {
+            return;
+        }
         editForm.put(`/admin/users/${editingUser.id}`, {
             onSuccess: () => {
                 setEditingUser(null);
                 editForm.reset();
             },
         });
-    };
-
-    const handleDelete = (id: number) => {
-        if (confirm('Are you sure you want to delete this admin user?')) {
-            router.delete(`/admin/users/${id}`);
-        }
     };
 
     const openEditModal = (user: User) => {
@@ -89,9 +92,11 @@ export default function UserIndex({ users }: Props) {
                         <h1 className="text-2xl font-bold">Admin Users</h1>
                         <p className="text-sm text-gray-500">Manage all users with Admin role.</p>
                     </div>
-                    <Button onClick={() => setIsCreateOpen(true)} className="flex items-center gap-2">
-                        <Plus className="size-4" /> 
-                    </Button>
+                    {canInviteUser && (
+                        <Button onClick={() => setIsCreateOpen(true)} className="flex items-center gap-2">
+                            <Plus className="size-4" />
+                        </Button>
+                    )}
                 </div>
 
                 <div className="overflow-x-auto rounded-lg border border-sidebar-border bg-white dark:bg-sidebar">
@@ -119,20 +124,24 @@ export default function UserIndex({ users }: Props) {
                                         <td className="px-6 py-4 text-gray-500">{user.email}</td>
                                         <td className="px-6 py-4 text-right">
                                             <div className="flex items-center justify-end gap-2">
-                                                <Button
-                                                    variant="outline"
-                                                    size="sm"
-                                                    onClick={() => openEditModal(user)}
-                                                >
-                                                    <Edit className="size-3.5" />
-                                                </Button>
-                                                <Button
-                                                    variant="destructive"
-                                                    size="sm"
-                                                    onClick={() => handleDelete(user.id)}
-                                                >
-                                                    <Trash2 className="size-3.5" />
-                                                </Button>
+                                                {canUpdateUser && (
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        onClick={() => openEditModal(user)}
+                                                    >
+                                                        <Edit className="size-3.5" />
+                                                    </Button>
+                                                )}
+                                                {canDeleteUser && (
+                                                    <Button
+                                                        variant="destructive"
+                                                        size="sm"
+                                                        onClick={() => setDeleteUser(user)}
+                                                    >
+                                                        <Trash2 className="size-3.5" />
+                                                    </Button>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>
@@ -142,6 +151,32 @@ export default function UserIndex({ users }: Props) {
                     </table>
                 </div>
             </div>
+
+            <ConfirmDeleteDialog
+                open={deleteUser !== null}
+                onOpenChange={(open) => !open && setDeleteUser(null)}
+                title="Delete Admin User?"
+                description={
+                    <>
+                        Are you sure you want to delete{' '}
+                        <span className="font-semibold text-foreground">{deleteUser?.name}</span>? This action cannot be undone.
+                    </>
+                }
+                confirmLabel="Delete User"
+                onConfirm={() => {
+                    if (!deleteUser) {
+                        return;
+                    }
+                    setIsDeleting(true);
+                    router.delete(`/admin/users/${deleteUser.id}`, {
+                        onFinish: () => {
+                            setIsDeleting(false);
+                            setDeleteUser(null);
+                        },
+                    });
+                }}
+                processing={isDeleting}
+            />
 
             {/* Create Dialog */}
             <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
@@ -262,4 +297,3 @@ export default function UserIndex({ users }: Props) {
 UserIndex.layout = (page: React.ReactNode) => (
     <AppLayout breadcrumbs={[{ title: 'Users', href: '/admin/users' }]}>{page}</AppLayout>
 );
-

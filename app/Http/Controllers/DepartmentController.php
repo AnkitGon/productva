@@ -15,15 +15,16 @@ class DepartmentController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        if (!$user || !$user->organization_id) {
+        if (! $user || ! $user->organization_id || ! $user->active_plant_id) {
             abort(403);
         }
 
         $perPage = (int) $request->get('per_page', 10);
         $perPage = in_array($perPage, [10, 25, 50, 100]) ? $perPage : 10;
 
-        $query = Department::where('organization_id', $user->organization_id)
-            ->withCount('employees');
+        $query = Department::query()
+            ->forActivePlant($user)
+            ->withCount(['employees' => fn ($q) => $q->where('plant_id', $user->active_plant_id)]);
 
         // Search
         if ($request->filled('search')) {
@@ -50,7 +51,7 @@ class DepartmentController extends Controller
     public function store(Request $request)
     {
         $user = $request->user();
-        if (!$user || !$user->organization_id) {
+        if (! $user || ! $user->organization_id || ! $user->active_plant_id) {
             abort(403);
         }
 
@@ -59,13 +60,16 @@ class DepartmentController extends Controller
                 'required',
                 'string',
                 'max:255',
-                Rule::unique('departments')->where('organization_id', $user->organization_id),
+                Rule::unique('departments')
+                    ->where('organization_id', $user->organization_id)
+                    ->where('plant_id', $user->active_plant_id),
             ],
         ]);
 
         Department::create([
             'name' => $validated['name'],
             'organization_id' => $user->organization_id,
+            'plant_id' => $user->active_plant_id,
         ]);
 
         Inertia::flash('toast', [
@@ -82,7 +86,7 @@ class DepartmentController extends Controller
     public function update(Request $request, Department $department)
     {
         $user = $request->user();
-        if (!$user || $department->organization_id !== $user->organization_id) {
+        if (! $user || ! $this->departmentBelongsToActivePlant($user, $department)) {
             abort(403);
         }
 
@@ -91,7 +95,10 @@ class DepartmentController extends Controller
                 'required',
                 'string',
                 'max:255',
-                Rule::unique('departments')->where('organization_id', $user->organization_id)->ignore($department->id),
+                Rule::unique('departments')
+                    ->where('organization_id', $user->organization_id)
+                    ->where('plant_id', $user->active_plant_id)
+                    ->ignore($department->id),
             ],
         ]);
 
@@ -113,8 +120,17 @@ class DepartmentController extends Controller
     public function destroy(Request $request, Department $department)
     {
         $user = $request->user();
-        if (!$user || $department->organization_id !== $user->organization_id) {
+        if (! $user || ! $this->departmentBelongsToActivePlant($user, $department)) {
             abort(403);
+        }
+
+        if ($department->employees()->where('plant_id', $user->active_plant_id)->exists()) {
+            Inertia::flash('toast', [
+                'type' => 'error',
+                'message' => 'Cannot archive this department while employees are still assigned. Reassign them first.',
+            ]);
+
+            return redirect()->back();
         }
 
         $department->delete();
@@ -125,5 +141,11 @@ class DepartmentController extends Controller
         ]);
 
         return redirect()->back();
+    }
+
+    private function departmentBelongsToActivePlant($user, Department $department): bool
+    {
+        return $department->organization_id === $user->organization_id
+            && (int) $department->plant_id === (int) $user->active_plant_id;
     }
 }

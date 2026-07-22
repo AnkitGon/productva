@@ -5,8 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\Plant;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
 class PlantController extends Controller
@@ -17,9 +17,13 @@ class PlantController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $user = $request->user();
-        if (!$user || !$user->organization_id) {
+        if (! $user || ! $user->organization_id) {
             abort(403, 'User does not belong to an organization.');
         }
+
+        $request->merge([
+            'manager_id' => $request->filled('manager_id') ? $request->input('manager_id') : null,
+        ]);
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
@@ -44,7 +48,13 @@ class PlantController extends Controller
             'country' => ['nullable', 'string', 'max:100'],
             'phone' => ['nullable', 'string', 'max:50'],
             'email' => ['nullable', 'email', 'max:255'],
-            'manager_name' => ['nullable', 'string', 'max:255'],
+            'manager_id' => [
+                'nullable',
+                'integer',
+                Rule::exists('users', 'id')
+                    ->where('organization_id', $user->organization_id)
+                    ->where('active_plant_id', $user->active_plant_id),
+            ],
             'status' => ['required', 'string', Rule::in(['Active', 'Inactive'])],
             'is_default' => ['required', 'boolean'],
         ]);
@@ -54,7 +64,7 @@ class PlantController extends Controller
             $slugBase = $validated['slug'];
             $count = 1;
             while (Plant::where('organization_id', $user->organization_id)->where('slug', $validated['slug'])->exists()) {
-                $validated['slug'] = $slugBase . '-' . $count++;
+                $validated['slug'] = $slugBase.'-'.$count++;
             }
         }
 
@@ -82,9 +92,13 @@ class PlantController extends Controller
     public function update(Request $request, Plant $plant): RedirectResponse
     {
         $user = $request->user();
-        if (!$user || $plant->organization_id !== $user->organization_id) {
+        if (! $user || $plant->organization_id !== $user->organization_id) {
             abort(403);
         }
+
+        $request->merge([
+            'manager_id' => $request->filled('manager_id') ? $request->input('manager_id') : null,
+        ]);
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
@@ -109,7 +123,13 @@ class PlantController extends Controller
             'country' => ['nullable', 'string', 'max:100'],
             'phone' => ['nullable', 'string', 'max:50'],
             'email' => ['nullable', 'email', 'max:255'],
-            'manager_name' => ['nullable', 'string', 'max:255'],
+            'manager_id' => [
+                'nullable',
+                'integer',
+                Rule::exists('users', 'id')
+                    ->where('organization_id', $user->organization_id)
+                    ->where('active_plant_id', $user->active_plant_id),
+            ],
             'status' => ['required', 'string', Rule::in(['Active', 'Inactive'])],
             'is_default' => ['required', 'boolean'],
         ]);
@@ -119,7 +139,7 @@ class PlantController extends Controller
             $slugBase = $validated['slug'];
             $count = 1;
             while (Plant::where('organization_id', $user->organization_id)->where('slug', $validated['slug'])->where('id', '!=', $plant->id)->exists()) {
-                $validated['slug'] = $slugBase . '-' . $count++;
+                $validated['slug'] = $slugBase.'-'.$count++;
             }
         }
 
@@ -139,7 +159,7 @@ class PlantController extends Controller
     public function destroy(Request $request, Plant $plant): RedirectResponse
     {
         $user = $request->user();
-        if (!$user || $plant->organization_id !== $user->organization_id) {
+        if (! $user || $plant->organization_id !== $user->organization_id) {
             abort(403);
         }
 
@@ -149,6 +169,7 @@ class PlantController extends Controller
                 'type' => 'error',
                 'message' => 'Unable to delete plant. At least one plant must exist.',
             ]);
+
             return redirect()->back()->withErrors(['error' => 'You cannot delete the last plant. At least one plant must exist.']);
         }
 

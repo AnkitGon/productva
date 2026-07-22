@@ -4,6 +4,11 @@ use Illuminate\Support\Facades\Route;
 
 Route::inertia('/', 'welcome')->name('home');
 
+use App\Http\Controllers\ActivePlantController;
+use App\Http\Controllers\DepartmentController;
+use App\Http\Controllers\EmployeeController;
+use App\Http\Controllers\OrganizationUserController;
+use App\Http\Controllers\PlantController;
 use App\Http\Middleware\CheckPermission;
 
 Route::middleware(['auth', 'verified'])->group(function () {
@@ -17,41 +22,46 @@ Route::middleware(['auth', 'verified'])->group(function () {
         return inertia('admin/dashboard');
     })->middleware(CheckPermission::class.':admin-dashboard')->name('dashboard');
 
-    Route::post('plants/{plant}/activate', \App\Http\Controllers\ActivePlantController::class)->name('plants.activate');
-    Route::post('plants', [\App\Http\Controllers\PlantController::class, 'store'])->name('plants.store');
-    Route::put('plants/{plant}', [\App\Http\Controllers\PlantController::class, 'update'])->name('plants.update');
-    Route::delete('plants/{plant}', [\App\Http\Controllers\PlantController::class, 'destroy'])->name('plants.destroy');
+    Route::post('plants/{plant}/activate', ActivePlantController::class)->name('plants.activate');
+    Route::post('plants', [PlantController::class, 'store'])
+        ->middleware(CheckPermission::class.':plants.create')
+        ->name('plants.store');
+    Route::put('plants/{plant}', [PlantController::class, 'update'])
+        ->middleware(CheckPermission::class.':plants.update')
+        ->name('plants.update');
+    Route::delete('plants/{plant}', [PlantController::class, 'destroy'])
+        ->middleware(CheckPermission::class.':plants.delete')
+        ->name('plants.destroy');
+    Route::get('organization/users/search', OrganizationUserController::class)->name('organization.users.search');
 
     // Employees Directory Resource
     Route::middleware(CheckPermission::class.':employees.view')->group(function () {
-        Route::get('employees', [\App\Http\Controllers\EmployeeController::class, 'index'])->name('employees.index');
-        Route::get('employees/{employee}', [\App\Http\Controllers\EmployeeController::class, 'show'])->name('employees.show');
+        Route::get('employees', [EmployeeController::class, 'index'])->name('employees.index');
+        Route::get('employees/{employee}', [EmployeeController::class, 'show'])->name('employees.show');
     });
     Route::middleware(CheckPermission::class.':employees.create')->group(function () {
-        Route::post('employees', [\App\Http\Controllers\EmployeeController::class, 'store'])->name('employees.store');
+        Route::post('employees', [EmployeeController::class, 'store'])->name('employees.store');
     });
     Route::middleware(CheckPermission::class.':employees.update')->group(function () {
-        Route::put('employees/{employee}', [\App\Http\Controllers\EmployeeController::class, 'update'])->name('employees.update');
+        Route::put('employees/{employee}', [EmployeeController::class, 'update'])->name('employees.update');
     });
     Route::middleware(CheckPermission::class.':employees.delete')->group(function () {
-        Route::delete('employees/{employee}', [\App\Http\Controllers\EmployeeController::class, 'destroy'])->name('employees.destroy');
+        Route::delete('employees/{employee}', [EmployeeController::class, 'destroy'])->name('employees.destroy');
     });
 
     // Departments Directory Resource
     Route::middleware(CheckPermission::class.':departments.view')->group(function () {
-        Route::get('departments', [\App\Http\Controllers\DepartmentController::class, 'index'])->name('departments.index');
+        Route::get('departments', [DepartmentController::class, 'index'])->name('departments.index');
     });
     Route::middleware(CheckPermission::class.':departments.create')->group(function () {
-        Route::post('departments', [\App\Http\Controllers\DepartmentController::class, 'store'])->name('departments.store');
+        Route::post('departments', [DepartmentController::class, 'store'])->name('departments.store');
     });
     Route::middleware(CheckPermission::class.':departments.update')->group(function () {
-        Route::put('departments/{department}', [\App\Http\Controllers\DepartmentController::class, 'update'])->name('departments.update');
+        Route::put('departments/{department}', [DepartmentController::class, 'update'])->name('departments.update');
     });
     Route::middleware(CheckPermission::class.':departments.delete')->group(function () {
-        Route::delete('departments/{department}', [\App\Http\Controllers\DepartmentController::class, 'destroy'])->name('departments.destroy');
+        Route::delete('departments/{department}', [DepartmentController::class, 'destroy'])->name('departments.destroy');
     });
 });
-
-
 
 require __DIR__.'/settings.php';

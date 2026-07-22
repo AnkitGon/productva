@@ -1,21 +1,23 @@
 import { Head, useForm } from '@inertiajs/react';
 import React, { useState } from 'react';
-import { Plus, Building2, Edit2, Trash2, HelpCircle } from 'lucide-react';
+import { Plus, Building2, Edit2, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
     DialogContent,
     DialogDescription,
-    DialogFooter,
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import InputError from '@/components/input-error';
+import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import { ModalButtons } from '@/components/modal-buttons';
 import { DataTable, type ColumnDef, type TableMeta } from '@/components/data-table/data-table';
+import { useCan } from '@/hooks/use-can';
+import type { RowAction } from '@/components/data-table/data-table-row-actions';
 
 interface Department {
     id: number;
@@ -39,6 +41,7 @@ interface Props {
 }
 
 export default function DepartmentsIndex({ departments, filters }: Props) {
+    const { can } = useCan();
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [editingDept, setEditingDept] = useState<Department | null>(null);
     const [deleteConfirmDept, setDeleteConfirmDept] = useState<Department | null>(null);
@@ -122,7 +125,7 @@ export default function DepartmentsIndex({ departments, filters }: Props) {
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div>
                         <h1 className="text-2xl font-bold tracking-tight">Departments</h1>
-                        <p className="text-sm text-muted-foreground">Manage corporate departments and employee assignments.</p>
+                        <p className="text-sm text-muted-foreground">Manage departments for the active plant and employee assignments.</p>
                     </div>
                 </div>
 
@@ -138,39 +141,56 @@ export default function DepartmentsIndex({ departments, filters }: Props) {
                     entityLabel="departments"
                     emptyStateIcon={Building2}
                     emptyStateTitle="No departments found"
-                    emptyStateDescription="Create your first department to begin mapping your workforce."
+                    emptyStateDescription={
+                        can('departments.create')
+                            ? 'Create your first department to begin mapping your workforce.'
+                            : 'No departments are available for the active plant.'
+                    }
                     emptyStateAction={
-                        <Button size="sm" onClick={handleCreateClick} className="gap-2">
-                            <Plus className="size-3.5" />
-                            Create Department
-                        </Button>
+                        can('departments.create') ? (
+                            <Button size="sm" onClick={handleCreateClick} className="gap-2">
+                                <Plus className="size-3.5" />
+                                Create Department
+                            </Button>
+                        ) : undefined
                     }
                     primaryAction={
-                        <Button onClick={handleCreateClick} className="gap-2 h-9 font-semibold text-xs">
-                            <Plus className="size-4" />
-                            Add Department
-                        </Button>
+                        can('departments.create') ? (
+                            <Button onClick={handleCreateClick} className="gap-2 h-9 font-semibold text-xs">
+                                <Plus className="size-4" />
+                                Add Department
+                            </Button>
+                        ) : undefined
                     }
-                    rowActions={(row) => [
-                        {
-                            label: 'Edit',
-                            icon: Edit2,
-                            onClick: handleEditClick,
-                        },
-                        {
-                            label: 'Archive',
-                            icon: Trash2,
-                            onClick: (r) => setDeleteConfirmDept(r),
-                            variant: 'destructive',
-                            separator: true,
-                        },
-                    ]}
+                    rowActions={(row) => {
+                        const actions: RowAction<Department>[] = [];
+
+                        if (can('departments.update')) {
+                            actions.push({
+                                label: 'Edit',
+                                icon: Edit2,
+                                onClick: handleEditClick,
+                            });
+                        }
+
+                        if (can('departments.delete') && (row.employees_count ?? 0) === 0) {
+                            actions.push({
+                                label: 'Archive',
+                                icon: Trash2,
+                                onClick: (r) => setDeleteConfirmDept(r),
+                                variant: 'destructive',
+                                separator: true,
+                            });
+                        }
+
+                        return actions;
+                    }}
                 />
             </div>
 
             {/* Create / Edit Dialog */}
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-                <DialogContent className="max-w-md">
+                <DialogContent className="sm:max-w-md">
                     <DialogHeader>
                         <DialogTitle className="text-lg font-bold">
                             {editingDept ? 'Edit Department' : 'Add Department'}
@@ -204,38 +224,19 @@ export default function DepartmentsIndex({ departments, filters }: Props) {
                 </DialogContent>
             </Dialog>
 
-            {/* Archive Confirmation Dialog */}
-            <Dialog open={deleteConfirmDept !== null} onOpenChange={(open) => !open && setDeleteConfirmDept(null)}>
-                <DialogContent className="max-w-md">
-                    <DialogHeader>
-                        <DialogTitle className="text-lg font-bold text-destructive flex items-center gap-2">
-                            <HelpCircle className="size-5 shrink-0" />
-                            Archive Department?
-                        </DialogTitle>
-                        <DialogDescription className="text-xs text-muted-foreground pt-1.5">
-                            Archive <span className="font-semibold text-foreground">{deleteConfirmDept?.name}</span>? Employees assigned will not be removed.
-                        </DialogDescription>
-                    </DialogHeader>
-                    <DialogFooter className="flex items-center justify-end gap-2 pt-4">
-                        <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => setDeleteConfirmDept(null)}
-                            className="font-semibold text-xs"
-                        >
-                            Cancel
-                        </Button>
-                        <Button
-                            type="button"
-                            variant="destructive"
-                            onClick={handleDeleteConfirm}
-                            className="font-semibold text-xs"
-                        >
-                            Archive Department
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
+            <ConfirmDeleteDialog
+                open={deleteConfirmDept !== null}
+                onOpenChange={(open) => !open && setDeleteConfirmDept(null)}
+                title="Archive Department?"
+                description={
+                    <>
+                        Archive <span className="font-semibold text-foreground">{deleteConfirmDept?.name}</span>? This can only be done when no employees are assigned.
+                    </>
+                }
+                confirmLabel="Archive Department"
+                onConfirm={handleDeleteConfirm}
+                processing={processing}
+            />
         </>
     );
 }

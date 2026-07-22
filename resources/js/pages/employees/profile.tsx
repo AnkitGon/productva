@@ -22,6 +22,7 @@ interface Employee {
     display_name: string | null;
     name: string;
     photo_path: string | null;
+    photo_url?: string | null;
     job_title: string | null;
     email: string | null;
     phone: string | null;
@@ -104,13 +105,15 @@ export default function EmployeeProfile({ employee }: Props) {
                 <div className="bg-card border border-border/40 rounded-2xl p-6 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
                     <div className="flex items-center gap-5">
                         <Avatar className="size-20 border-2 border-border shadow-sm">
-                            {employee.photo_path ? (
-                                <AvatarImage src={employee.photo_path} alt={employee.name} />
-                            ) : (
-                                <AvatarFallback className="bg-primary/5 text-primary text-xl font-bold">
-                                    {getInitials(employee.first_name, employee.last_name)}
-                                </AvatarFallback>
+                            {(employee.photo_url || employee.photo_path) && (
+                                <AvatarImage
+                                    src={employee.photo_url || `/storage/${employee.photo_path}`}
+                                    alt={employee.name}
+                                />
                             )}
+                            <AvatarFallback className="bg-primary/5 text-primary text-xl font-bold">
+                                {getInitials(employee.first_name, employee.last_name)}
+                            </AvatarFallback>
                         </Avatar>
                         <div className="space-y-1.5">
                             <div className="flex items-center gap-2.5 flex-wrap">

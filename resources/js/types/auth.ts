@@ -5,6 +5,13 @@ export type Plant = {
     slug: string;
     status: string;
     is_default: boolean;
+    manager_id?: number | null;
+    manager?: {
+        id: number;
+        name: string;
+        email: string;
+    } | null;
+    [key: string]: unknown;
 };
 
 export type User = {
@@ -15,6 +22,7 @@ export type User = {
     email_verified_at: string | null;
     two_factor_enabled?: boolean;
     roles?: string[];
+    permissions?: string[];
     organization_id?: number | null;
     active_plant_id?: number | null;
     plants?: Plant[];
@@ -24,9 +32,15 @@ export type User = {
     [key: string]: unknown;
 };
 
-
 export type Auth = {
-    user: User;
+    user: User | null;
+};
+
+export type SharedData = {
+    name: string;
+    auth: Auth;
+    sidebarOpen: boolean;
+    [key: string]: unknown;
 };
 
 /* @chisel-passkeys */

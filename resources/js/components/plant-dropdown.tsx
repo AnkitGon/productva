@@ -21,7 +21,10 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import InputError from '@/components/input-error';
+import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
+import { UserSearchSelect } from '@/components/user-search-select';
 import { activate, store } from '@/routes/plants';
+import { useCan } from '@/hooks/use-can';
 import type { SharedData } from '@/types';
 import { cn } from '@/lib/utils';
 import { CountrySelect, StateSelect } from '@/components/location-selector';
@@ -42,6 +45,7 @@ const generateCode = (name: string): string => {
 
 export function PlantDropdown() {
     const { auth } = usePage<SharedData>().props;
+    const { can } = useCan();
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [isSlugEdited, setIsSlugEdited] = useState(false);
     const [showSlugInput, setShowSlugInput] = useState(false);
@@ -49,6 +53,7 @@ export function PlantDropdown() {
     const [selectedCountryCode, setSelectedCountryCode] = useState('');
     const [editingPlant, setEditingPlant] = useState<any>(null);
     const [deleteConfirmPlantId, setDeleteConfirmPlantId] = useState<number | null>(null);
+    const [managerLabel, setManagerLabel] = useState('');
 
     if (!auth?.user || !auth.user.plants || auth.user.plants.length === 0) {
         return null;
@@ -71,7 +76,7 @@ export function PlantDropdown() {
         country: '',
         phone: '',
         email: '',
-        manager_name: '',
+        manager_id: '',
         status: 'Active',
         is_default: false,
     });
@@ -127,10 +132,15 @@ export function PlantDropdown() {
             country: plant.country || '',
             phone: plant.phone || '',
             email: plant.email || '',
-            manager_name: plant.manager_name || '',
+            manager_id: plant.manager_id ? String(plant.manager_id) : '',
             status: plant.status,
             is_default: !!plant.is_default,
         });
+        setManagerLabel(
+            plant.manager
+                ? `${plant.manager.name} (${plant.manager.email})`
+                : '',
+        );
 
         const foundCountry = Country.getAllCountries().find((c) => c.name === plant.country);
         setSelectedCountryCode(foundCountry ? foundCountry.isoCode : '');
@@ -154,6 +164,7 @@ export function PlantDropdown() {
                 setIsCodeEdited(false);
                 setSelectedCountryCode('');
                 setEditingPlant(null);
+                setManagerLabel('');
                 reset();
             },
         };
@@ -191,15 +202,17 @@ export function PlantDropdown() {
                                 {plant.name}
                             </button>
                             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity pr-1">
-                                <button
-                                    type="button"
-                                    onClick={() => handleEdit(plant)}
-                                    className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground cursor-pointer"
-                                    title="Edit plant"
-                                >
-                                    <Pencil className="size-3" />
-                                </button>
-                                {plants.length > 1 && (
+                                {can('plants.update') && (
+                                    <button
+                                        type="button"
+                                        onClick={() => handleEdit(plant)}
+                                        className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground cursor-pointer"
+                                        title="Edit plant"
+                                    >
+                                        <Pencil className="size-3" />
+                                    </button>
+                                )}
+                                {can('plants.delete') && plants.length > 1 && (
                                     <button
                                         type="button"
                                         onClick={() => handleDelete(plant.id)}
@@ -212,14 +225,23 @@ export function PlantDropdown() {
                             </div>
                         </div>
                     ))}
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem 
-                        onClick={() => setIsDialogOpen(true)}
-                        className="text-primary focus:text-primary font-medium cursor-pointer"
-                    >
-                        <Plus className="mr-2 size-4" />
-                        Create new plant
-                    </DropdownMenuItem>
+                    {can('plants.create') && (
+                        <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem 
+                                onClick={() => {
+                                    setEditingPlant(null);
+                                    setManagerLabel('');
+                                    reset();
+                                    setIsDialogOpen(true);
+                                }}
+                                className="text-primary focus:text-primary font-medium cursor-pointer"
+                            >
+                                <Plus className="mr-2 size-4" />
+                                Create new plant
+                            </DropdownMenuItem>
+                        </>
+                    )}
                 </DropdownMenuContent>
             </DropdownMenu>
 
@@ -231,10 +253,11 @@ export function PlantDropdown() {
                     setIsCodeEdited(false);
                     setSelectedCountryCode('');
                     setEditingPlant(null);
+                    setManagerLabel('');
                     reset();
                 }
             }}>
-                <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+                <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
                         <DialogTitle>{editingPlant ? "Edit Plant" : "Create New Plant"}</DialogTitle>
                         <DialogDescription>
@@ -364,15 +387,18 @@ export function PlantDropdown() {
                             
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div className="space-y-2">
-                                    <Label htmlFor="manager_name">Manager <span className="text-[10px] text-muted-foreground/80 font-normal ml-1">(Optional)</span></Label>
-                                    <Input
-                                        id="manager_name"
-                                        value={data.manager_name}
-                                        onChange={(e) => setData('manager_name', e.target.value)}
-                                        placeholder="e.g. John Doe"
+                                    <Label>Manager <span className="text-[10px] text-muted-foreground/80 font-normal ml-1">(Optional)</span></Label>
+                                    <UserSearchSelect
+                                        value={data.manager_id}
+                                        selectedLabel={managerLabel}
+                                        placeholder="Search users…"
+                                        onChange={(val, option) => {
+                                            setData('manager_id', val);
+                                            setManagerLabel(option?.label ?? '');
+                                        }}
                                     />
                                     <div className="min-h-[20px] mt-1">
-                                        <InputError message={errors.manager_name} />
+                                        <InputError message={errors.manager_id} />
                                     </div>
                                 </div>
 
@@ -578,42 +604,27 @@ export function PlantDropdown() {
                 </DialogContent>
             </Dialog>
 
-            <Dialog open={deleteConfirmPlantId !== null} onOpenChange={(open) => {
-                if (!open) {
-                    setDeleteConfirmPlantId(null);
+            <ConfirmDeleteDialog
+                open={deleteConfirmPlantId !== null}
+                onOpenChange={(open) => !open && setDeleteConfirmPlantId(null)}
+                title="Delete Plant?"
+                description={
+                    <>
+                        Are you sure you want to delete{' '}
+                        <span className="font-semibold text-foreground">
+                            {plants.find((p) => p.id === deleteConfirmPlantId)?.name ?? 'this plant'}
+                        </span>
+                        ? This action cannot be undone.
+                    </>
                 }
-            }}>
-                <DialogContent className="max-w-md">
-                    <DialogHeader>
-                        <DialogTitle>Delete Plant</DialogTitle>
-                        <DialogDescription>
-                            Are you sure you want to delete this plant? This action cannot be undone.
-                        </DialogDescription>
-                    </DialogHeader>
-                    <DialogFooter className="mt-4">
-                        <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => setDeleteConfirmPlantId(null)}
-                        >
-                            Cancel
-                        </Button>
-                        <Button
-                            type="button"
-                            variant="destructive"
-                            onClick={() => {
-                                if (deleteConfirmPlantId) {
-                                    router.delete(`/plants/${deleteConfirmPlantId}`, {
-                                        onSuccess: () => setDeleteConfirmPlantId(null),
-                                    });
-                                }
-                            }}
-                        >
-                            Delete
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
+                confirmLabel="Delete Plant"
+                onConfirm={() => {
+                    if (!deleteConfirmPlantId) return;
+                    router.delete(`/plants/${deleteConfirmPlantId}`, {
+                        onSuccess: () => setDeleteConfirmPlantId(null),
+                    });
+                }}
+            />
         </>
     );
 }

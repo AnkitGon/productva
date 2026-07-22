@@ -4,33 +4,32 @@ namespace App\Http\Controllers;
 
 use App\Models\Department;
 use App\Models\Employee;
-use App\Models\Plant;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
 class EmployeeController extends Controller
 {
-
-
     /**
      * Display a listing of the employees.
      */
     public function index(Request $request)
     {
         $user = $request->user();
-        if (!$user || !$user->organization_id) {
+        if (! $user || ! $user->organization_id || ! $user->active_plant_id) {
             abort(403);
         }
 
         $perPage = (int) $request->get('per_page', 10);
         $perPage = in_array($perPage, [10, 25, 50, 100]) ? $perPage : 10;
 
-        $query = Employee::where('organization_id', $user->organization_id)
-            ->with(['plant', 'department', 'manager', 'user.roles']);
+        $query = Employee::query()
+            ->forActivePlant($user)
+            ->with(['plant', 'department', 'manager.user', 'user.roles']);
 
         // Search
         if ($request->filled('search')) {
@@ -45,9 +44,6 @@ class EmployeeController extends Controller
         }
 
         // Filters
-        if ($request->filled('plant_id')) {
-            $query->where('plant_id', $request->plant_id);
-        }
         if ($request->filled('department_id')) {
             $query->where('department_id', $request->department_id);
         }
@@ -73,20 +69,18 @@ class EmployeeController extends Controller
 
         $employees = $query->paginate($perPage)->withQueryString();
 
-        $plants = Plant::where('organization_id', $user->organization_id)->get(['id', 'name']);
-        $departments = Department::where('organization_id', $user->organization_id)->get(['id', 'name']);
-        $managers = Employee::where('organization_id', $user->organization_id)->get(['id', 'first_name', 'last_name']);
+        $departments = Department::query()
+            ->forActivePlant($user)
+            ->get(['id', 'name']);
 
-        // Load roles for login assignment (excluding super-admin)
-        $roles = Role::where('slug', '!=', 'super-admin')->get(['id', 'name', 'slug']);
+        // Roles for login assignment (exclude system/admin roles)
+        $roles = Role::whereNotIn('slug', ['super-admin', 'admin'])->get(['id', 'name', 'slug']);
 
         return Inertia::render('employees/index', [
             'employees' => $employees,
-            'plants' => $plants,
             'departments' => $departments,
-            'managers' => $managers,
             'roles' => $roles,
-            'filters' => $request->only(['plant_id', 'department_id', 'employment_type', 'status', 'has_login', 'search', 'sort_by', 'sort_dir', 'per_page']),
+            'filters' => $request->only(['department_id', 'employment_type', 'status', 'has_login', 'search', 'sort_by', 'sort_dir', 'per_page']),
         ]);
     }
 
@@ -96,9 +90,14 @@ class EmployeeController extends Controller
     public function store(Request $request)
     {
         $user = $request->user();
-        if (!$user || !$user->organization_id) {
+        if (! $user || ! $user->organization_id || ! $user->active_plant_id) {
             abort(403);
         }
+
+        $request->merge([
+            'manager_id' => $request->filled('manager_id') ? $request->input('manager_id') : null,
+            'department_id' => $request->filled('department_id') ? $request->input('department_id') : null,
+        ]);
 
         $validated = $request->validate([
             'employee_code' => [
@@ -110,25 +109,44 @@ class EmployeeController extends Controller
             'first_name' => ['required', 'string', 'max:255'],
             'last_name' => ['required', 'string', 'max:255'],
             'display_name' => ['nullable', 'string', 'max:255'],
-            'department_id' => ['nullable', 'exists:departments,id'],
+            'department_id' => [
+                'nullable',
+                Rule::exists('departments', 'id')
+                    ->where('organization_id', $user->organization_id)
+                    ->where('plant_id', $user->active_plant_id),
+            ],
             'job_title' => ['nullable', 'string', 'max:255'],
-            'manager_id' => ['nullable', 'exists:employees,id'],
+            'manager_id' => [
+                'nullable',
+                Rule::exists('employees', 'id')
+                    ->where('organization_id', $user->organization_id)
+                    ->where('plant_id', $user->active_plant_id),
+            ],
             'email' => ['nullable', 'email', 'max:255'],
             'phone' => ['nullable', 'string', 'max:50'],
             'mobile' => ['nullable', 'string', 'max:50'],
             'employment_type' => ['required', Rule::in(['Full-Time', 'Part-Time', 'Contract', 'Temporary', 'Intern'])],
             'hire_date' => ['nullable', 'date'],
             'status' => ['required', Rule::in(['Active', 'Inactive', 'On Leave', 'Terminated'])],
-            
+            'photo' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
+
             // System access fields
             'create_login' => ['boolean'],
             'login_email' => ['required_if:create_login,true', 'nullable', 'email', 'unique:users,email'],
-            'login_role_id' => ['required_if:create_login,true', 'nullable', 'exists:roles,id'],
+            'login_role_id' => [
+                'required_if:create_login,true',
+                'nullable',
+                Rule::exists('roles', 'id')->where(fn ($query) => $query->whereNotIn('slug', ['super-admin', 'admin'])),
+            ],
             'login_password' => ['required_if:create_login,true', 'nullable', 'string', 'min:8'],
+        ], [
+            'photo.image' => 'The photo must be an image file.',
+            'photo.mimes' => 'The photo must be a JPG, PNG, or WebP image.',
+            'photo.max' => 'The photo must be 2MB or smaller.',
         ]);
 
         $linkedUserId = null;
-        if (!empty($validated['create_login'])) {
+        if (! empty($validated['create_login'])) {
             $createdUser = User::create([
                 'name' => "{$validated['first_name']} {$validated['last_name']}",
                 'email' => $validated['login_email'],
@@ -142,8 +160,14 @@ class EmployeeController extends Controller
             $linkedUserId = $createdUser->id;
         }
 
+        $photoPath = null;
+        if ($request->hasFile('photo')) {
+            $photoPath = $request->file('photo')->store('employees', 'public');
+        }
+
         $employee = Employee::create([
-            ...$validated,
+            ...collect($validated)->except(['photo', 'create_login', 'login_email', 'login_role_id', 'login_password'])->all(),
+            'photo_path' => $photoPath,
             'organization_id' => $user->organization_id,
             'plant_id' => $user->active_plant_id,
             'user_id' => $linkedUserId,
@@ -163,7 +187,7 @@ class EmployeeController extends Controller
     public function show(Request $request, Employee $employee)
     {
         $user = $request->user();
-        if (!$user || $employee->organization_id !== $user->organization_id) {
+        if (! $user || ! $this->employeeBelongsToActivePlant($user, $employee)) {
             abort(403);
         }
 
@@ -180,9 +204,14 @@ class EmployeeController extends Controller
     public function update(Request $request, Employee $employee)
     {
         $user = $request->user();
-        if (!$user || $employee->organization_id !== $user->organization_id) {
+        if (! $user || ! $this->employeeBelongsToActivePlant($user, $employee)) {
             abort(403);
         }
+
+        $request->merge([
+            'manager_id' => $request->filled('manager_id') ? $request->input('manager_id') : null,
+            'department_id' => $request->filled('department_id') ? $request->input('department_id') : null,
+        ]);
 
         $validated = $request->validate([
             'employee_code' => [
@@ -194,15 +223,27 @@ class EmployeeController extends Controller
             'first_name' => ['required', 'string', 'max:255'],
             'last_name' => ['required', 'string', 'max:255'],
             'display_name' => ['nullable', 'string', 'max:255'],
-            'department_id' => ['nullable', 'exists:departments,id'],
+            'department_id' => [
+                'nullable',
+                Rule::exists('departments', 'id')
+                    ->where('organization_id', $user->organization_id)
+                    ->where('plant_id', $user->active_plant_id),
+            ],
             'job_title' => ['nullable', 'string', 'max:255'],
-            'manager_id' => ['nullable', 'exists:employees,id'],
+            'manager_id' => [
+                'nullable',
+                Rule::exists('employees', 'id')
+                    ->where('organization_id', $user->organization_id)
+                    ->where('plant_id', $user->active_plant_id),
+            ],
             'email' => ['nullable', 'email', 'max:255'],
             'phone' => ['nullable', 'string', 'max:50'],
             'mobile' => ['nullable', 'string', 'max:50'],
             'employment_type' => ['required', Rule::in(['Full-Time', 'Part-Time', 'Contract', 'Temporary', 'Intern'])],
             'hire_date' => ['nullable', 'date'],
             'status' => ['required', Rule::in(['Active', 'Inactive', 'On Leave', 'Terminated'])],
+            'photo' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
+            'remove_photo' => ['sometimes', 'boolean'],
 
             // System access fields
             'create_login' => ['boolean'],
@@ -210,24 +251,32 @@ class EmployeeController extends Controller
                 'required_if:create_login,true',
                 'nullable',
                 'email',
-                $employee->user_id 
+                $employee->user_id
                     ? Rule::unique('users', 'email')->ignore($employee->user_id)
-                    : 'unique:users,email'
+                    : 'unique:users,email',
             ],
-            'login_role_id' => ['required_if:create_login,true', 'nullable', 'exists:roles,id'],
+            'login_role_id' => [
+                'required_if:create_login,true',
+                'nullable',
+                Rule::exists('roles', 'id')->where(fn ($query) => $query->whereNotIn('slug', ['super-admin', 'admin'])),
+            ],
             'login_password' => ['nullable', 'string', 'min:8'],
+        ], [
+            'photo.image' => 'The photo must be an image file.',
+            'photo.mimes' => 'The photo must be a JPG, PNG, or WebP image.',
+            'photo.max' => 'The photo must be 2MB or smaller.',
         ]);
 
         $linkedUserId = $employee->user_id;
 
-        if (!empty($validated['create_login'])) {
+        if (! empty($validated['create_login'])) {
             if ($employee->user) {
                 // Update existing user details
                 $updateData = [
                     'name' => "{$validated['first_name']} {$validated['last_name']}",
                     'email' => $validated['login_email'],
                 ];
-                if (!empty($validated['login_password'])) {
+                if (! empty($validated['login_password'])) {
                     $updateData['password'] = Hash::make($validated['login_password']);
                 }
                 $employee->user->update($updateData);
@@ -247,8 +296,22 @@ class EmployeeController extends Controller
             }
         }
 
+        $photoPath = $employee->photo_path;
+        if ($request->hasFile('photo')) {
+            if ($photoPath) {
+                Storage::disk('public')->delete($photoPath);
+            }
+            $photoPath = $request->file('photo')->store('employees', 'public');
+        } elseif (! empty($validated['remove_photo'])) {
+            if ($photoPath) {
+                Storage::disk('public')->delete($photoPath);
+            }
+            $photoPath = null;
+        }
+
         $employee->update([
-            ...$validated,
+            ...collect($validated)->except(['photo', 'remove_photo', 'create_login', 'login_email', 'login_role_id', 'login_password'])->all(),
+            'photo_path' => $photoPath,
             'user_id' => $linkedUserId,
         ]);
 
@@ -266,7 +329,7 @@ class EmployeeController extends Controller
     public function destroy(Request $request, Employee $employee)
     {
         $user = $request->user();
-        if (!$user || $employee->organization_id !== $user->organization_id) {
+        if (! $user || ! $this->employeeBelongsToActivePlant($user, $employee)) {
             abort(403);
         }
 
@@ -279,5 +342,11 @@ class EmployeeController extends Controller
         ]);
 
         return redirect()->back();
+    }
+
+    private function employeeBelongsToActivePlant(User $user, Employee $employee): bool
+    {
+        return $employee->organization_id === $user->organization_id
+            && (int) $employee->plant_id === (int) $user->active_plant_id;
     }
 }

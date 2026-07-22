@@ -198,8 +198,10 @@ export function DataTable<T extends { id: number | string }>({
                                 </th>
                             ))}
                             {rowActions && (
-                                <th className={`${cellPadding} bg-muted/40 text-right w-12`}>
-                                    <span className="sr-only">Actions</span>
+                                <th className={`${cellPadding} bg-muted/40 text-right w-20`}>
+                                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                                        Actions
+                                    </span>
                                 </th>
                             )}
                         </tr>

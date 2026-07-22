@@ -35,22 +35,38 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
+        $user = $request->user();
+
+        if ($user) {
+            $user->loadMissing(['roles.permissions', 'organization', 'activePlant']);
+        }
+
         return [
             ...parent::share($request),
             'name' => config('app.name'),
             'auth' => [
-                'user' => $request->user() ? [
-                    'id' => $request->user()->id,
-                    'name' => $request->user()->name,
-                    'email' => $request->user()->email,
-                    'roles' => $request->user()->roles->pluck('slug'),
-                    'organization_id' => $request->user()->organization_id,
-                    'active_plant_id' => $request->user()->active_plant_id ?: ($request->user()->organization ? $request->user()->organization->plants()->where('is_default', true)->value('id') : null),
-                    'plants' => $request->user()->organization ? $request->user()->organization->plants()->get(['id', 'name', 'code', 'slug', 'status', 'is_default']) : [],
-                    'active_plant' => $request->user()->activePlant 
-                        ? $request->user()->activePlant->only(['id', 'name', 'code', 'slug']) 
-                        : ($request->user()->organization 
-                            ? $request->user()->organization->plants()->where('is_default', true)->first(['id', 'name', 'code', 'slug']) 
+                'user' => $user ? [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'roles' => $user->roles->pluck('slug'),
+                    'permissions' => $user->roles
+                        ->flatMap->permissions
+                        ->pluck('slug')
+                        ->unique()
+                        ->values()
+                        ->all(),
+                    'organization_id' => $user->organization_id,
+                    'active_plant_id' => $user->active_plant_id ?: ($user->organization ? $user->organization->plants()->where('is_default', true)->value('id') : null),
+                    'plants' => $user->organization
+                        ? $user->organization->plants()
+                            ->with(['manager:id,name,email'])
+                            ->get()
+                        : [],
+                    'active_plant' => $user->activePlant
+                        ? $user->activePlant->only(['id', 'name', 'code', 'slug'])
+                        : ($user->organization
+                            ? $user->organization->plants()->where('is_default', true)->first(['id', 'name', 'code', 'slug'])
                             : null),
                 ] : null,
             ],
@@ -58,4 +74,3 @@ class HandleInertiaRequests extends Middleware
         ];
     }
 }
-

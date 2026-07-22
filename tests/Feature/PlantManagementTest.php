@@ -2,10 +2,32 @@
 
 use App\Models\Organization;
 use App\Models\Plant;
+use App\Models\Role;
 use App\Models\User;
+use Database\Seeders\RolesAndPermissionsSeeder;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
+
+beforeEach(function () {
+    $this->seed(RolesAndPermissionsSeeder::class);
+});
+
+function plantManager(Organization $org, Plant $plant): User
+{
+    $user = User::create([
+        'name' => 'Plant User',
+        'email' => 'plant-user-'.uniqid().'@example.com',
+        'password' => bcrypt('password'),
+        'organization_id' => $org->id,
+        'active_plant_id' => $plant->id,
+    ]);
+
+    $user->roles()->attach(Role::where('slug', 'admin')->firstOrFail());
+
+    return $user;
+}
 
 test('code and slug must be unique per organization', function () {
     $org1 = Organization::create(['name' => 'Org One']);
@@ -26,7 +48,7 @@ test('code and slug must be unique per organization', function () {
         'name' => 'Other Plant',
         'code' => 'M01',
         'slug' => 'other-plant',
-    ]))->toThrow(\Illuminate\Database\UniqueConstraintViolationException::class);
+    ]))->toThrow(UniqueConstraintViolationException::class);
 
     // Creating another plant in Org 1 with same slug should fail unique constraint
     expect(fn () => Plant::create([
@@ -34,7 +56,7 @@ test('code and slug must be unique per organization', function () {
         'name' => 'Other Plant 2',
         'code' => 'M02',
         'slug' => 'main-plant',
-    ]))->toThrow(\Illuminate\Database\UniqueConstraintViolationException::class);
+    ]))->toThrow(UniqueConstraintViolationException::class);
 
     // Different organization can use same code and slug
     $plantInOrg2 = Plant::create([
@@ -155,13 +177,7 @@ test('user can create a plant and it is automatically activated', function () {
         'is_default' => true,
     ]);
 
-    $user = User::create([
-        'name' => 'Plant User',
-        'email' => 'user@example.com',
-        'password' => bcrypt('password'),
-        'organization_id' => $org->id,
-        'active_plant_id' => $plant1->id,
-    ]);
+    $user = plantManager($org, $plant1);
 
     $response = $this->actingAs($user)->post(route('plants.store'), [
         'name' => 'Plant 2',
@@ -173,7 +189,7 @@ test('user can create a plant and it is automatically activated', function () {
     ]);
 
     $response->assertRedirect();
-    
+
     $newPlant = Plant::where('organization_id', $org->id)->where('code', 'P2')->first();
     expect($newPlant)->not->toBeNull();
     expect($user->fresh()->active_plant_id)->toBe($newPlant->id);
@@ -190,13 +206,7 @@ test('user can update a plant', function () {
         'is_default' => true,
     ]);
 
-    $user = User::create([
-        'name' => 'Plant User',
-        'email' => 'user@example.com',
-        'password' => bcrypt('password'),
-        'organization_id' => $org->id,
-        'active_plant_id' => $plant1->id,
-    ]);
+    $user = plantManager($org, $plant1);
 
     $response = $this->actingAs($user)->put(route('plants.update', ['plant' => $plant1->id]), [
         'name' => 'Updated Plant 1',
@@ -208,7 +218,7 @@ test('user can update a plant', function () {
     ]);
 
     $response->assertRedirect();
-    
+
     $updated = $plant1->fresh();
     expect($updated->name)->toBe('Updated Plant 1');
     expect($updated->code)->toBe('P1-NEW');
@@ -234,13 +244,7 @@ test('user can delete a plant when multiple exist', function () {
         'is_default' => false,
     ]);
 
-    $user = User::create([
-        'name' => 'Plant User',
-        'email' => 'user@example.com',
-        'password' => bcrypt('password'),
-        'organization_id' => $org->id,
-        'active_plant_id' => $plant1->id,
-    ]);
+    $user = plantManager($org, $plant1);
 
     $response = $this->actingAs($user)->delete(route('plants.destroy', ['plant' => $plant2->id]));
 
@@ -259,17 +263,10 @@ test('user cannot delete the last plant', function () {
         'is_default' => true,
     ]);
 
-    $user = User::create([
-        'name' => 'Plant User',
-        'email' => 'user@example.com',
-        'password' => bcrypt('password'),
-        'organization_id' => $org->id,
-        'active_plant_id' => $plant1->id,
-    ]);
+    $user = plantManager($org, $plant1);
 
     $response = $this->actingAs($user)->delete(route('plants.destroy', ['plant' => $plant1->id]));
 
     $response->assertSessionHasErrors('error');
     expect(Plant::find($plant1->id))->not->toBeNull();
 });
-

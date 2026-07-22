@@ -1,8 +1,7 @@
 <?php
 
-use App\Http\Middleware\CheckPermission;
-use Illuminate\Support\Facades\Route;
-
+use App\Http\Controllers\Admin\RoleController;
+use App\Http\Controllers\Admin\UserController;
 /*
 |--------------------------------------------------------------------------
 | Admin Routes
@@ -13,8 +12,8 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-use App\Http\Controllers\Admin\UserController;
-use App\Http\Controllers\Admin\RoleController;
+use App\Http\Middleware\CheckPermission;
+use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth', 'verified'])->group(function () {
     // Super Admin Dashboard -> /admin/dashboard
@@ -31,14 +30,16 @@ Route::middleware(['auth', 'verified'])->group(function () {
     });
 
     // Admin Roles Management -> /admin/roles
-    Route::middleware(CheckPermission::class.':roles.view')->group(function () {
-        Route::get('/roles', [RoleController::class, 'index'])->name('roles.index');
-        Route::post('/roles', [RoleController::class, 'store'])->name('roles.store');
-        Route::put('/roles/{role}', [RoleController::class, 'update'])->name('roles.update');
-        Route::delete('/roles/{role}', [RoleController::class, 'destroy'])->name('roles.destroy');
-    });
+    Route::get('/roles', [RoleController::class, 'index'])
+        ->middleware(CheckPermission::class.':roles.view')
+        ->name('roles.index');
+    Route::post('/roles', [RoleController::class, 'store'])
+        ->middleware(CheckPermission::class.':roles.create')
+        ->name('roles.store');
+    Route::put('/roles/{role}', [RoleController::class, 'update'])
+        ->middleware(CheckPermission::class.':roles.update')
+        ->name('roles.update');
+    Route::delete('/roles/{role}', [RoleController::class, 'destroy'])
+        ->middleware(CheckPermission::class.':roles.delete')
+        ->name('roles.destroy');
 });
-
-
-
-

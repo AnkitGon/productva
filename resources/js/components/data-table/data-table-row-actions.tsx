@@ -31,7 +31,7 @@ export function DataTableRowActions<T>({ row, actions }: DataTableRowActionsProp
                 <Button
                     variant="ghost"
                     size="icon"
-                    className="size-8 opacity-0 group-hover/row:opacity-100 transition-opacity data-[state=open]:opacity-100"
+                    className="size-8"
                 >
                     <MoreHorizontal className="size-4 text-muted-foreground" />
                     <span className="sr-only">Open actions</span>
