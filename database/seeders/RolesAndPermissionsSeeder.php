@@ -130,6 +130,18 @@ class RolesAndPermissionsSeeder extends Seeder
             ['slug' => 'machine.create', 'name' => 'Create Machines'],
             ['slug' => 'machine.update', 'name' => 'Update Machines'],
             ['slug' => 'machine.delete', 'name' => 'Delete Machines'],
+
+            // Units of Measure
+            ['slug' => 'uom.view', 'name' => 'View Units of Measure'],
+            ['slug' => 'uom.create', 'name' => 'Create Units of Measure'],
+            ['slug' => 'uom.update', 'name' => 'Update Units of Measure'],
+            ['slug' => 'uom.delete', 'name' => 'Delete Units of Measure'],
+
+            // Product Categories
+            ['slug' => 'product-category.view', 'name' => 'View Product Categories'],
+            ['slug' => 'product-category.create', 'name' => 'Create Product Categories'],
+            ['slug' => 'product-category.update', 'name' => 'Update Product Categories'],
+            ['slug' => 'product-category.delete', 'name' => 'Delete Product Categories'],
         ];
 
         $permissionIds = [];
@@ -170,6 +182,8 @@ class RolesAndPermissionsSeeder extends Seeder
                     'shift.view', 'shift.create', 'shift.update', 'shift.delete',
                     'work-centers.view', 'work-centers.create', 'work-centers.update', 'work-centers.delete',
                     'machine.view', 'machine.create', 'machine.update', 'machine.delete',
+                    'uom.view', 'uom.create', 'uom.update', 'uom.delete',
+                    'product-category.view', 'product-category.create', 'product-category.update', 'product-category.delete',
                 ],
             ],
             'production-manager' => [

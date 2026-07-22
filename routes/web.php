@@ -10,7 +10,9 @@ use App\Http\Controllers\EmployeeController;
 use App\Http\Controllers\MachineController;
 use App\Http\Controllers\OrganizationUserController;
 use App\Http\Controllers\PlantController;
+use App\Http\Controllers\ProductCategoryController;
 use App\Http\Controllers\ShiftController;
+use App\Http\Controllers\UnitOfMeasureController;
 use App\Http\Controllers\WorkCenterController;
 use App\Http\Middleware\CheckPermission;
 
@@ -106,6 +108,34 @@ Route::middleware(['auth', 'verified'])->group(function () {
     });
     Route::middleware(CheckPermission::class.':machine.delete')->group(function () {
         Route::delete('machines/{machine}', [MachineController::class, 'destroy'])->name('machines.destroy');
+    });
+
+    // Units of Measure (organization-scoped)
+    Route::middleware(CheckPermission::class.':uom.view')->group(function () {
+        Route::get('units-of-measure', [UnitOfMeasureController::class, 'index'])->name('units-of-measure.index');
+    });
+    Route::middleware(CheckPermission::class.':uom.create')->group(function () {
+        Route::post('units-of-measure', [UnitOfMeasureController::class, 'store'])->name('units-of-measure.store');
+    });
+    Route::middleware(CheckPermission::class.':uom.update')->group(function () {
+        Route::put('units-of-measure/{unitOfMeasure}', [UnitOfMeasureController::class, 'update'])->name('units-of-measure.update');
+    });
+    Route::middleware(CheckPermission::class.':uom.delete')->group(function () {
+        Route::delete('units-of-measure/{unitOfMeasure}', [UnitOfMeasureController::class, 'destroy'])->name('units-of-measure.destroy');
+    });
+
+    // Product Categories (organization-scoped)
+    Route::middleware(CheckPermission::class.':product-category.view')->group(function () {
+        Route::get('product-categories', [ProductCategoryController::class, 'index'])->name('product-categories.index');
+    });
+    Route::middleware(CheckPermission::class.':product-category.create')->group(function () {
+        Route::post('product-categories', [ProductCategoryController::class, 'store'])->name('product-categories.store');
+    });
+    Route::middleware(CheckPermission::class.':product-category.update')->group(function () {
+        Route::put('product-categories/{productCategory}', [ProductCategoryController::class, 'update'])->name('product-categories.update');
+    });
+    Route::middleware(CheckPermission::class.':product-category.delete')->group(function () {
+        Route::delete('product-categories/{productCategory}', [ProductCategoryController::class, 'destroy'])->name('product-categories.destroy');
     });
 });
 
