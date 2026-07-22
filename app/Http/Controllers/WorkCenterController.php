@@ -29,7 +29,8 @@ class WorkCenterController extends Controller
                 'department:id,name',
                 'supervisor:id,first_name,last_name,display_name,employee_code,user_id',
                 'supervisor.user:id,name,email',
-            ]);
+            ])
+            ->withCount('machines');
 
         if ($request->filled('search')) {
             $search = $request->search;

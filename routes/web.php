@@ -7,6 +7,7 @@ Route::inertia('/', 'welcome')->name('home');
 use App\Http\Controllers\ActivePlantController;
 use App\Http\Controllers\DepartmentController;
 use App\Http\Controllers\EmployeeController;
+use App\Http\Controllers\MachineController;
 use App\Http\Controllers\OrganizationUserController;
 use App\Http\Controllers\PlantController;
 use App\Http\Controllers\ShiftController;
@@ -91,6 +92,20 @@ Route::middleware(['auth', 'verified'])->group(function () {
     });
     Route::middleware(CheckPermission::class.':work-centers.delete')->group(function () {
         Route::delete('work-centers/{workCenter}', [WorkCenterController::class, 'destroy'])->name('work-centers.destroy');
+    });
+
+    // Machines
+    Route::middleware(CheckPermission::class.':machine.view')->group(function () {
+        Route::get('machines', [MachineController::class, 'index'])->name('machines.index');
+    });
+    Route::middleware(CheckPermission::class.':machine.create')->group(function () {
+        Route::post('machines', [MachineController::class, 'store'])->name('machines.store');
+    });
+    Route::middleware(CheckPermission::class.':machine.update')->group(function () {
+        Route::put('machines/{machine}', [MachineController::class, 'update'])->name('machines.update');
+    });
+    Route::middleware(CheckPermission::class.':machine.delete')->group(function () {
+        Route::delete('machines/{machine}', [MachineController::class, 'destroy'])->name('machines.destroy');
     });
 });
 

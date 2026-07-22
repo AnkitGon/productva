@@ -1,5 +1,5 @@
 import { Link } from '@inertiajs/react';
-import { Building2, Contact, Clock3, Factory, LayoutGrid, Shield, Users } from 'lucide-react';
+import { Building2, Contact, Clock3, Cog, Factory, LayoutGrid, Shield, Users } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
 import { NavMain } from '@/components/nav-main';
 import { NavUser } from '@/components/nav-user';
@@ -62,6 +62,15 @@ export function AppSidebar() {
                       title: 'Work Centers',
                       href: '/work-centers',
                       icon: Factory,
+                  },
+              ]
+            : []),
+        ...(can('machine.view')
+            ? [
+                  {
+                      title: 'Machines',
+                      href: '/machines',
+                      icon: Cog,
                   },
               ]
             : []),

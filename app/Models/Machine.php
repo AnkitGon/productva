@@ -6,24 +6,44 @@ use App\Models\Concerns\BelongsToActivePlant;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-class WorkCenter extends Model
+class Machine extends Model
 {
     use BelongsToActivePlant, HasFactory, SoftDeletes;
+
+    public const STATUSES = [
+        'Active',
+        'Idle',
+        'Running',
+        'Maintenance',
+        'Breakdown',
+        'Retired',
+    ];
+
+    public const ASSIGNABLE_STATUSES = [
+        'Active',
+        'Idle',
+        'Running',
+    ];
 
     protected $fillable = [
         'organization_id',
         'plant_id',
         'department_id',
+        'work_center_id',
         'code',
         'name',
-        'description',
-        'supervisor_employee_id',
+        'manufacturer',
+        'model',
+        'serial_number',
+        'asset_tag',
+        'installation_date',
+        'purchase_date',
         'capacity',
-        'capacity_uom',
+        'capacity_unit',
         'status',
+        'notes',
         'created_by',
         'updated_by',
     ];
@@ -42,6 +62,8 @@ class WorkCenter extends Model
     {
         return [
             'capacity' => 'decimal:2',
+            'installation_date' => 'date',
+            'purchase_date' => 'date',
         ];
     }
 
@@ -60,9 +82,9 @@ class WorkCenter extends Model
         return $this->belongsTo(Department::class);
     }
 
-    public function supervisor(): BelongsTo
+    public function workCenter(): BelongsTo
     {
-        return $this->belongsTo(Employee::class, 'supervisor_employee_id');
+        return $this->belongsTo(WorkCenter::class);
     }
 
     public function creator(): BelongsTo
@@ -75,22 +97,16 @@ class WorkCenter extends Model
         return $this->belongsTo(User::class, 'updated_by');
     }
 
-    public function machines(): HasMany
+    public function canBeAssignedToProductionOrders(): bool
     {
-        return $this->hasMany(Machine::class);
+        return in_array($this->status, self::ASSIGNABLE_STATUSES, true);
     }
 
-    public function hasAssignedMachines(): bool
+    /**
+     * Placeholder until production history exists.
+     */
+    public function hasProductionHistory(): bool
     {
-        if (array_key_exists('machines_count', $this->attributes)) {
-            return (int) $this->attributes['machines_count'] > 0;
-        }
-
-        return $this->machines()->exists();
-    }
-
-    public function canReceiveProductionOrders(): bool
-    {
-        return $this->status === 'Active';
+        return false;
     }
 }
