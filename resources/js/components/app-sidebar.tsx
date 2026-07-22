@@ -1,5 +1,5 @@
 import { Link } from '@inertiajs/react';
-import { Building2, Contact, Clock3, Cog, Factory, FolderTree, LayoutGrid, Ruler, Shield, Users } from 'lucide-react';
+import { Building2, Contact, Clock3, Cog, Factory, FolderTree, LayoutGrid, Package, Ruler, Shield, Tags, Users, Warehouse } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
 import { NavMain } from '@/components/nav-main';
 import { NavUser } from '@/components/nav-user';
@@ -89,6 +89,29 @@ export function AppSidebar() {
                       title: 'Product Categories',
                       href: '/product-categories',
                       icon: FolderTree,
+                  },
+              ]
+            : []),
+        ...(can('products.view')
+            ? [
+                  {
+                      title: 'Products',
+                      href: '/products',
+                      icon: Package,
+                  },
+              ]
+            : []),
+        ...(can('warehouses.view')
+            ? [
+                  {
+                      title: 'Warehouses',
+                      href: '/warehouses',
+                      icon: Warehouse,
+                  },
+                  {
+                      title: 'Warehouse Types',
+                      href: '/warehouse-types',
+                      icon: Tags,
                   },
               ]
             : []),

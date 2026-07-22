@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class UnitOfMeasure extends Model
@@ -71,16 +72,23 @@ class UnitOfMeasure extends Model
         return $this->belongsTo(Organization::class);
     }
 
+    public function products(): HasMany
+    {
+        return $this->hasMany(Product::class, 'uom_id');
+    }
+
     public function canBeAssignedToProducts(): bool
     {
         return $this->status === 'Active';
     }
 
-    /**
-     * Placeholder until the Products module exists.
-     */
     public function isReferencedByProduct(): bool
     {
-        return false;
+        return Product::query()
+            ->where(function ($query) {
+                $query->where('uom_id', $this->id)
+                    ->orWhere('purchase_uom_id', $this->id);
+            })
+            ->exists();
     }
 }

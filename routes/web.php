@@ -11,8 +11,11 @@ use App\Http\Controllers\MachineController;
 use App\Http\Controllers\OrganizationUserController;
 use App\Http\Controllers\PlantController;
 use App\Http\Controllers\ProductCategoryController;
+use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ShiftController;
 use App\Http\Controllers\UnitOfMeasureController;
+use App\Http\Controllers\WarehouseController;
+use App\Http\Controllers\WarehouseTypeController;
 use App\Http\Controllers\WorkCenterController;
 use App\Http\Middleware\CheckPermission;
 
@@ -136,6 +139,59 @@ Route::middleware(['auth', 'verified'])->group(function () {
     });
     Route::middleware(CheckPermission::class.':product-category.delete')->group(function () {
         Route::delete('product-categories/{productCategory}', [ProductCategoryController::class, 'destroy'])->name('product-categories.destroy');
+    });
+
+    // Products (organization-scoped)
+    Route::middleware(CheckPermission::class.':products.view')->group(function () {
+        Route::get('products', [ProductController::class, 'index'])->name('products.index');
+    });
+    Route::middleware(CheckPermission::class.':products.create')->group(function () {
+        Route::get('products/create', [ProductController::class, 'create'])->name('products.create');
+        Route::post('products', [ProductController::class, 'store'])->name('products.store');
+    });
+    Route::middleware(CheckPermission::class.':products.export')->group(function () {
+        Route::get('products/export', [ProductController::class, 'export'])->name('products.export');
+    });
+    Route::middleware(CheckPermission::class.':products.import')->group(function () {
+        Route::post('products/import', [ProductController::class, 'import'])->name('products.import');
+    });
+    Route::middleware(CheckPermission::class.':products.view')->group(function () {
+        Route::get('products/{product}', [ProductController::class, 'show'])->name('products.show');
+    });
+    Route::middleware(CheckPermission::class.':products.update')->group(function () {
+        Route::get('products/{product}/edit', [ProductController::class, 'edit'])->name('products.edit');
+        Route::put('products/{product}', [ProductController::class, 'update'])->name('products.update');
+    });
+    Route::middleware(CheckPermission::class.':products.delete')->group(function () {
+        Route::delete('products/{product}', [ProductController::class, 'destroy'])->name('products.destroy');
+    });
+
+    // Warehouse Types (organization-scoped)
+    Route::middleware(CheckPermission::class.':warehouses.view')->group(function () {
+        Route::get('warehouse-types', [WarehouseTypeController::class, 'index'])->name('warehouse-types.index');
+    });
+    Route::middleware(CheckPermission::class.':warehouses.create')->group(function () {
+        Route::post('warehouse-types', [WarehouseTypeController::class, 'store'])->name('warehouse-types.store');
+    });
+    Route::middleware(CheckPermission::class.':warehouses.update')->group(function () {
+        Route::put('warehouse-types/{warehouseType}', [WarehouseTypeController::class, 'update'])->name('warehouse-types.update');
+    });
+    Route::middleware(CheckPermission::class.':warehouses.delete')->group(function () {
+        Route::delete('warehouse-types/{warehouseType}', [WarehouseTypeController::class, 'destroy'])->name('warehouse-types.destroy');
+    });
+
+    // Warehouses (active plant)
+    Route::middleware(CheckPermission::class.':warehouses.view')->group(function () {
+        Route::get('warehouses', [WarehouseController::class, 'index'])->name('warehouses.index');
+    });
+    Route::middleware(CheckPermission::class.':warehouses.create')->group(function () {
+        Route::post('warehouses', [WarehouseController::class, 'store'])->name('warehouses.store');
+    });
+    Route::middleware(CheckPermission::class.':warehouses.update')->group(function () {
+        Route::put('warehouses/{warehouse}', [WarehouseController::class, 'update'])->name('warehouses.update');
+    });
+    Route::middleware(CheckPermission::class.':warehouses.delete')->group(function () {
+        Route::delete('warehouses/{warehouse}', [WarehouseController::class, 'destroy'])->name('warehouses.destroy');
     });
 });
 

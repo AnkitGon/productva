@@ -50,6 +50,7 @@ class RolesAndPermissionsSeeder extends Seeder
             ['slug' => 'products.create', 'name' => 'Create Products'],
             ['slug' => 'products.update', 'name' => 'Update Products'],
             ['slug' => 'products.delete', 'name' => 'Delete Products'],
+            ['slug' => 'products.import', 'name' => 'Import Products Data'],
             ['slug' => 'products.export', 'name' => 'Export Products Data'],
 
             // Production
@@ -166,7 +167,7 @@ class RolesAndPermissionsSeeder extends Seeder
                     'plants.view', 'plants.create', 'plants.update', 'plants.delete', 'plants.export',
                     'warehouses.view', 'warehouses.create', 'warehouses.update', 'warehouses.delete', 'warehouses.export',
                     'inventory.view', 'inventory.adjust',
-                    'products.view', 'products.create', 'products.update', 'products.delete', 'products.export',
+                    'products.view', 'products.create', 'products.update', 'products.delete', 'products.import', 'products.export',
                     'production.view', 'production.create', 'production.update', 'production-orders.release',
                     'quality.view', 'quality.verify',
                     'maintenance.view', 'maintenance.manage',

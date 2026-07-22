@@ -25,7 +25,8 @@ class ProductCategoryController extends Controller
 
         $query = ProductCategory::query()
             ->forOrganization($user)
-            ->with(['parent:id,code,name']);
+            ->with(['parent:id,code,name'])
+            ->withCount('products');
 
         if ($request->filled('search')) {
             $search = $request->search;

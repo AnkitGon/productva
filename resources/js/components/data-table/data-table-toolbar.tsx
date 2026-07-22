@@ -79,34 +79,32 @@ export function DataTableToolbar<T>({
     const sortableColumns = columns.filter((c) => c.key !== '_actions');
 
     return (
-        <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-border/40">
-            {/* Search input */}
-            <div className="relative shrink-0 w-52">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
-                <Input
-                    value={search}
-                    onChange={(e) => handleSearch(e.target.value)}
-                    placeholder={searchPlaceholder}
-                    className="pl-9 pr-8 h-8 text-xs"
-                />
-                {search && (
-                    <button
-                        onClick={handleClearSearch}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                        <X className="size-3.5" />
-                    </button>
-                )}
+        <div className="flex flex-col gap-2 px-4 py-3 border-b border-border/40 sm:flex-row sm:items-start sm:justify-between">
+            {/* Search + filters: wrap independently so action buttons stay right */}
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                <div className="relative w-full shrink-0 sm:w-52">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
+                    <Input
+                        value={search}
+                        onChange={(e) => handleSearch(e.target.value)}
+                        placeholder={searchPlaceholder}
+                        className="pl-9 pr-8 h-8 text-xs"
+                    />
+                    {search && (
+                        <button
+                            onClick={handleClearSearch}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                            <X className="size-3.5" />
+                        </button>
+                    )}
+                </div>
+
+                {filterSlot}
             </div>
 
-            {/* Inline compact filter controls */}
-            {filterSlot}
-
-            {/* Spacer */}
-            <div className="flex-1" />
-
-            {/* Secondary actions + column visibility + density + primary action */}
-            <div className="flex items-center gap-1.5">
+            {/* Actions always stay on the right (or end on mobile) */}
+            <div className="flex shrink-0 items-center gap-1.5 self-end sm:self-start">
                 {secondaryActions}
 
                 {/* Column Visibility */}

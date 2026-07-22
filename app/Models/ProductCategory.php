@@ -90,17 +90,23 @@ class ProductCategory extends Model
         return $this->belongsTo(User::class, 'updated_by');
     }
 
+    public function products(): HasMany
+    {
+        return $this->hasMany(Product::class, 'category_id');
+    }
+
     public function canBeAssignedToProducts(): bool
     {
         return $this->status === 'Active';
     }
 
-    /**
-     * Placeholder until the Products module exists.
-     */
     public function hasProducts(): bool
     {
-        return false;
+        if (array_key_exists('products_count', $this->attributes)) {
+            return (int) $this->attributes['products_count'] > 0;
+        }
+
+        return $this->products()->exists();
     }
 
     public function getProductsCountAttribute(): int
@@ -109,7 +115,7 @@ class ProductCategory extends Model
             return (int) $this->attributes['products_count'];
         }
 
-        return 0;
+        return $this->products()->count();
     }
 
     /**
