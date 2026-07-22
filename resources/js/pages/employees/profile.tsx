@@ -2,7 +2,7 @@ import { Head, Link, useForm } from '@inertiajs/react';
 import React, { useState } from 'react';
 import { 
     User, Mail, Phone, Calendar, Shield, Award, ClipboardList, 
-    FileText, ArrowLeft, Building2, MapPin, Edit3, Trash2, Key, CheckCircle 
+    FileText, ArrowLeft, Building2, MapPin, Edit3, Trash2, Key, CheckCircle, Clock3, Moon
 } from 'lucide-react';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -33,6 +33,22 @@ interface Employee {
     user_id: number | null;
     plant: { id: number; name: string } | null;
     department: { id: number; name: string } | null;
+    shift: {
+        id: number;
+        name: string;
+        code: string;
+        start_time: string;
+        end_time: string;
+        break_minutes: number;
+        grace_in_minutes: number;
+        grace_out_minutes: number;
+        overnight: boolean;
+        working_minutes: number;
+        hours_label: string;
+        status: string;
+        notes: string | null;
+        is_currently_active?: boolean;
+    } | null;
     manager: { id: number; first_name: string; last_name: string; name?: string } | null;
     user: { id: number; name: string; email: string; roles: Array<{ id: number; name: string; slug: string }> } | null;
 }
@@ -86,6 +102,24 @@ export default function EmployeeProfile({ employee }: Props) {
         return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
     };
 
+    const formatTime = (value?: string | null) => {
+        if (!value) {
+            return '—';
+        }
+
+        const match = value.match(/^(\d{1,2}):(\d{2})/);
+        if (!match) {
+            return value;
+        }
+
+        let hours = Number(match[1]);
+        const minutes = match[2];
+        const suffix = hours >= 12 ? 'PM' : 'AM';
+        hours = hours % 12 || 12;
+
+        return `${hours}:${minutes} ${suffix}`;
+    };
+
     return (
         <>
             <Head title={`${employee.name} - Profile`} />
@@ -125,9 +159,18 @@ export default function EmployeeProfile({ employee }: Props) {
                                     {employee.employee_code}
                                 </Badge>
                             </div>
-                            <p className="text-sm text-muted-foreground font-medium flex items-center gap-1.5">
+                            <p className="text-sm text-muted-foreground font-medium flex items-center gap-1.5 flex-wrap">
                                 <Building2 className="size-4 shrink-0" />
                                 {employee.job_title || 'No Job Title'} &bull; {employee.department?.name || 'Unassigned Department'}
+                                {employee.shift && (
+                                    <>
+                                        &bull;
+                                        <span className="inline-flex items-center gap-1">
+                                            <Clock3 className="size-3.5 shrink-0" />
+                                            {employee.shift.name}
+                                        </span>
+                                    </>
+                                )}
                             </p>
                         </div>
                     </div>
@@ -235,42 +278,116 @@ export default function EmployeeProfile({ employee }: Props) {
                     )}
 
                     {activeTab === 'assignments' && (
-                        <Card className="border-border/40 shadow-sm">
-                            <CardHeader>
-                                <CardTitle className="text-md font-bold">Organizational Assignments</CardTitle>
-                                <CardDescription className="text-xs">Supervisor hierarchy and reporting</CardDescription>
-                            </CardHeader>
-                            <CardContent className="space-y-6">
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    <div className="space-y-4">
-                                        <div>
-                                            <span className="text-xs font-semibold text-muted-foreground uppercase">Plant Location</span>
-                                            <p className="text-sm font-semibold mt-1 flex items-center gap-1.5">
-                                                <MapPin className="size-4 text-muted-foreground" />
-                                                {employee.plant?.name || '—'}
-                                            </p>
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            <Card className="border-border/40 shadow-sm">
+                                <CardHeader>
+                                    <CardTitle className="text-md font-bold">Organizational Assignments</CardTitle>
+                                    <CardDescription className="text-xs">Supervisor hierarchy and reporting</CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-6">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <div className="space-y-4">
+                                            <div>
+                                                <span className="text-xs font-semibold text-muted-foreground uppercase">Plant Location</span>
+                                                <p className="text-sm font-semibold mt-1 flex items-center gap-1.5">
+                                                    <MapPin className="size-4 text-muted-foreground" />
+                                                    {employee.plant?.name || '—'}
+                                                </p>
+                                            </div>
+                                            <div>
+                                                <span className="text-xs font-semibold text-muted-foreground uppercase">Department</span>
+                                                <p className="text-sm font-semibold mt-1">{employee.department?.name || '—'}</p>
+                                            </div>
                                         </div>
-                                        <div>
-                                            <span className="text-xs font-semibold text-muted-foreground uppercase">Department</span>
-                                            <p className="text-sm font-semibold mt-1">{employee.department?.name || '—'}</p>
+                                        <div className="space-y-4">
+                                            <div>
+                                                <span className="text-xs font-semibold text-muted-foreground uppercase">Reporting Manager</span>
+                                                <p className="text-sm font-semibold mt-1 flex items-center gap-2">
+                                                    <Avatar className="size-6">
+                                                        <AvatarFallback className="text-[10px] bg-primary/5 text-primary">
+                                                            {employee.manager ? getInitials(employee.manager.first_name, employee.manager.last_name) : '—'}
+                                                        </AvatarFallback>
+                                                    </Avatar>
+                                                    {employee.manager ? `${employee.manager.first_name} ${employee.manager.last_name}` : 'No assigned manager'}
+                                                </p>
+                                            </div>
                                         </div>
                                     </div>
-                                    <div className="space-y-4">
-                                        <div>
-                                            <span className="text-xs font-semibold text-muted-foreground uppercase">Reporting Manager</span>
-                                            <p className="text-sm font-semibold mt-1 flex items-center gap-2">
-                                                <Avatar className="size-6">
-                                                    <AvatarFallback className="text-[10px] bg-primary/5 text-primary">
-                                                        {employee.manager ? getInitials(employee.manager.first_name, employee.manager.last_name) : '—'}
-                                                    </AvatarFallback>
-                                                </Avatar>
-                                                {employee.manager ? `${employee.manager.first_name} ${employee.manager.last_name}` : 'No assigned manager'}
-                                            </p>
+                                </CardContent>
+                            </Card>
+
+                            <Card className="border-border/40 shadow-sm">
+                                <CardHeader>
+                                    <CardTitle className="text-md font-bold">Shift Details</CardTitle>
+                                    <CardDescription className="text-xs">Assigned working hours for the active plant</CardDescription>
+                                </CardHeader>
+                                <CardContent>
+                                    {employee.shift ? (
+                                        <div className="space-y-4">
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div>
+                                                    <p className="text-sm font-semibold">{employee.shift.name}</p>
+                                                    <p className="text-xs font-mono text-muted-foreground mt-0.5">{employee.shift.code}</p>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    {employee.shift.is_currently_active && (
+                                                        <Badge className="shadow-none bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+                                                            Active now
+                                                        </Badge>
+                                                    )}
+                                                    <Badge variant="outline">{employee.shift.status}</Badge>
+                                                </div>
+                                            </div>
+
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div>
+                                                    <span className="text-xs font-semibold text-muted-foreground uppercase block">Start</span>
+                                                    <p className="text-sm font-medium mt-1">{formatTime(employee.shift.start_time)}</p>
+                                                </div>
+                                                <div>
+                                                    <span className="text-xs font-semibold text-muted-foreground uppercase block">End</span>
+                                                    <p className="text-sm font-medium mt-1 flex items-center gap-1.5">
+                                                        <span>{formatTime(employee.shift.end_time)}</span>
+                                                        {employee.shift.overnight && (
+                                                            <Moon className="size-3.5 shrink-0 text-muted-foreground" />
+                                                        )}
+                                                    </p>
+                                                </div>
+                                                <div>
+                                                    <span className="text-xs font-semibold text-muted-foreground uppercase">Net Hours</span>
+                                                    <p className="text-sm font-medium mt-1">{employee.shift.hours_label}</p>
+                                                </div>
+                                                <div>
+                                                    <span className="text-xs font-semibold text-muted-foreground uppercase">Break</span>
+                                                    <p className="text-sm font-medium mt-1">{employee.shift.break_minutes} min</p>
+                                                </div>
+                                                <div>
+                                                    <span className="text-xs font-semibold text-muted-foreground uppercase">Grace In</span>
+                                                    <p className="text-sm font-medium mt-1">{employee.shift.grace_in_minutes} min</p>
+                                                </div>
+                                                <div>
+                                                    <span className="text-xs font-semibold text-muted-foreground uppercase">Grace Out</span>
+                                                    <p className="text-sm font-medium mt-1">{employee.shift.grace_out_minutes} min</p>
+                                                </div>
+                                            </div>
+
+                                            {employee.shift.notes && (
+                                                <div>
+                                                    <span className="text-xs font-semibold text-muted-foreground uppercase">Notes</span>
+                                                    <p className="text-sm mt-1 text-muted-foreground">{employee.shift.notes}</p>
+                                                </div>
+                                            )}
                                         </div>
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
+                                    ) : (
+                                        <div className="flex flex-col items-center justify-center p-8 text-center text-muted-foreground gap-2">
+                                            <Clock3 className="size-8 opacity-30" />
+                                            <p className="font-semibold text-sm">No shift assigned</p>
+                                            <p className="text-xs">Assign a shift from the employee edit form.</p>
+                                        </div>
+                                    )}
+                                </CardContent>
+                            </Card>
+                        </div>
                     )}
 
                     {activeTab === 'permissions' && (

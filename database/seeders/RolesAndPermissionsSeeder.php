@@ -2,12 +2,15 @@
 
 namespace Database\Seeders;
 
+use App\Models\Department;
+use App\Models\Employee;
+use App\Models\Organization;
 use App\Models\Permission;
+use App\Models\Plant;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Str;
 
 class RolesAndPermissionsSeeder extends Seeder
 {
@@ -109,6 +112,12 @@ class RolesAndPermissionsSeeder extends Seeder
             ['slug' => 'departments.create', 'name' => 'Create Departments'],
             ['slug' => 'departments.update', 'name' => 'Update Departments'],
             ['slug' => 'departments.delete', 'name' => 'Delete Departments'],
+
+            // Shifts
+            ['slug' => 'shift.view', 'name' => 'View Shifts'],
+            ['slug' => 'shift.create', 'name' => 'Create Shifts'],
+            ['slug' => 'shift.update', 'name' => 'Update Shifts'],
+            ['slug' => 'shift.delete', 'name' => 'Delete Shifts'],
         ];
 
         $permissionIds = [];
@@ -145,7 +154,8 @@ class RolesAndPermissionsSeeder extends Seeder
                     'roles.view', 'roles.create', 'roles.update', 'roles.delete',
                     'audit.view',
                     'employees.view', 'employees.create', 'employees.update', 'employees.delete', 'employees.export', 'employees.manage',
-                    'departments.view', 'departments.create', 'departments.update', 'departments.delete'
+                    'departments.view', 'departments.create', 'departments.update', 'departments.delete',
+                    'shift.view', 'shift.create', 'shift.update', 'shift.delete',
                 ],
             ],
             'production-manager' => [
@@ -156,7 +166,7 @@ class RolesAndPermissionsSeeder extends Seeder
                     'products.view',
                     'production.view', 'production.create', 'production.update', 'production-orders.release',
                     'quality.view', 'quality.verify',
-                    'reports.view', 'reports.export'
+                    'reports.view', 'reports.export',
                 ],
             ],
             'warehouse-manager' => [
@@ -167,7 +177,7 @@ class RolesAndPermissionsSeeder extends Seeder
                     'warehouses.view', 'warehouses.create', 'warehouses.update', 'warehouses.export',
                     'inventory.view', 'inventory.adjust',
                     'products.view',
-                    'reports.view', 'reports.export'
+                    'reports.view', 'reports.export',
                 ],
             ],
             'inventory-manager' => [
@@ -176,7 +186,7 @@ class RolesAndPermissionsSeeder extends Seeder
                     'admin-dashboard',
                     'inventory.view', 'inventory.adjust',
                     'products.view',
-                    'reports.view'
+                    'reports.view',
                 ],
             ],
             'quality-manager' => [
@@ -186,7 +196,7 @@ class RolesAndPermissionsSeeder extends Seeder
                     'products.view',
                     'production.view',
                     'quality.view', 'quality.verify',
-                    'reports.view'
+                    'reports.view',
                 ],
             ],
             'operator' => [
@@ -194,14 +204,14 @@ class RolesAndPermissionsSeeder extends Seeder
                 'permissions' => [
                     'admin-dashboard',
                     'production.view',
-                    'quality.view'
+                    'quality.view',
                 ],
             ],
             'maintenance-engineer' => [
                 'name' => 'Maintenance Engineer',
                 'permissions' => [
                     'admin-dashboard',
-                    'maintenance.view', 'maintenance.manage'
+                    'maintenance.view', 'maintenance.manage',
                 ],
             ],
             'procurement-manager' => [
@@ -209,7 +219,7 @@ class RolesAndPermissionsSeeder extends Seeder
                 'permissions' => [
                     'admin-dashboard',
                     'procurement.view', 'procurement.manage',
-                    'inventory.view'
+                    'inventory.view',
                 ],
             ],
             'sales-manager' => [
@@ -217,7 +227,7 @@ class RolesAndPermissionsSeeder extends Seeder
                 'permissions' => [
                     'admin-dashboard',
                     'sales.view', 'sales.manage',
-                    'inventory.view'
+                    'inventory.view',
                 ],
             ],
             'viewer' => [
@@ -234,7 +244,7 @@ class RolesAndPermissionsSeeder extends Seeder
                     'maintenance.view',
                     'procurement.view',
                     'sales.view',
-                    'reports.view'
+                    'reports.view',
                 ],
             ],
         ];
@@ -266,11 +276,11 @@ class RolesAndPermissionsSeeder extends Seeder
         ]);
         $superAdminUser->roles()->syncWithoutDetaching([$superAdminRole->id]);
 
-        $defaultOrg = \App\Models\Organization::firstOrCreate([
+        $defaultOrg = Organization::firstOrCreate([
             'name' => 'Default Organization',
         ]);
 
-        $defaultPlant = \App\Models\Plant::firstOrCreate([
+        $defaultPlant = Plant::firstOrCreate([
             'organization_id' => $defaultOrg->id,
             'code' => 'DFT',
             'slug' => 'default-plant',
@@ -291,7 +301,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'active_plant_id' => $defaultPlant->id,
         ]);
 
-        if (!$adminUser->organization_id) {
+        if (! $adminUser->organization_id) {
             $adminUser->update([
                 'organization_id' => $defaultOrg->id,
                 'active_plant_id' => $defaultPlant->id,
@@ -304,7 +314,7 @@ class RolesAndPermissionsSeeder extends Seeder
         $departmentsData = ['Production', 'Logistics', 'Quality Control', 'Maintenance'];
         $departments = [];
         foreach ($departmentsData as $deptName) {
-            $departments[] = \App\Models\Department::firstOrCreate([
+            $departments[] = Department::firstOrCreate([
                 'name' => $deptName,
                 'organization_id' => $defaultOrg->id,
             ]);
@@ -331,11 +341,11 @@ class RolesAndPermissionsSeeder extends Seeder
                 'email' => 'jane.smith@example.com',
                 'employment_type' => 'Full-Time',
                 'status' => 'Active',
-            ]
+            ],
         ];
 
         foreach ($employeesData as $emp) {
-            \App\Models\Employee::firstOrCreate([
+            Employee::firstOrCreate([
                 'organization_id' => $defaultOrg->id,
                 'employee_code' => $emp['employee_code'],
             ], [

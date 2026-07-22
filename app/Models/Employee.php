@@ -22,6 +22,7 @@ class Employee extends Model
         'organization_id',
         'plant_id',
         'department_id',
+        'shift_id',
         'job_title',
         'manager_id',
         'email',
@@ -69,6 +70,11 @@ class Employee extends Model
     public function department(): BelongsTo
     {
         return $this->belongsTo(Department::class);
+    }
+
+    public function shift(): BelongsTo
+    {
+        return $this->belongsTo(Shift::class);
     }
 
     public function manager(): BelongsTo

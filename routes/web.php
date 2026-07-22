@@ -9,6 +9,7 @@ use App\Http\Controllers\DepartmentController;
 use App\Http\Controllers\EmployeeController;
 use App\Http\Controllers\OrganizationUserController;
 use App\Http\Controllers\PlantController;
+use App\Http\Controllers\ShiftController;
 use App\Http\Middleware\CheckPermission;
 
 Route::middleware(['auth', 'verified'])->group(function () {
@@ -61,6 +62,20 @@ Route::middleware(['auth', 'verified'])->group(function () {
     });
     Route::middleware(CheckPermission::class.':departments.delete')->group(function () {
         Route::delete('departments/{department}', [DepartmentController::class, 'destroy'])->name('departments.destroy');
+    });
+
+    // Shifts
+    Route::middleware(CheckPermission::class.':shift.view')->group(function () {
+        Route::get('shifts', [ShiftController::class, 'index'])->name('shifts.index');
+    });
+    Route::middleware(CheckPermission::class.':shift.create')->group(function () {
+        Route::post('shifts', [ShiftController::class, 'store'])->name('shifts.store');
+    });
+    Route::middleware(CheckPermission::class.':shift.update')->group(function () {
+        Route::put('shifts/{shift}', [ShiftController::class, 'update'])->name('shifts.update');
+    });
+    Route::middleware(CheckPermission::class.':shift.delete')->group(function () {
+        Route::delete('shifts/{shift}', [ShiftController::class, 'destroy'])->name('shifts.destroy');
     });
 });
 

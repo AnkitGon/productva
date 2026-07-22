@@ -52,6 +52,7 @@ interface Employee {
     user_id: number | null;
     plant: { id: number; name: string } | null;
     department: { id: number; name: string } | null;
+    shift: { id: number; name: string; code: string; status: string } | null;
     manager: {
         id: number;
         first_name: string;
@@ -74,6 +75,7 @@ interface PaginatedEmployees {
 interface Props {
     employees: PaginatedEmployees;
     departments: Array<{ id: number; name: string }>;
+    shifts: Array<{ id: number; name: string; code: string; status: string }>;
     roles: Array<{ id: number; name: string; slug: string }>;
     filters: Record<string, string>;
 }
@@ -84,6 +86,7 @@ type EmployeeFormData = {
     last_name: string;
     display_name: string;
     department_id: string;
+    shift_id: string;
     job_title: string;
     manager_id: string;
     email: string;
@@ -106,6 +109,7 @@ const emptyForm = (): EmployeeFormData => ({
     last_name: '',
     display_name: '',
     department_id: '',
+    shift_id: '',
     job_title: '',
     manager_id: '',
     email: '',
@@ -129,6 +133,7 @@ function formFromEmployee(employee: Employee): EmployeeFormData {
         last_name: employee.last_name,
         display_name: employee.display_name ?? '',
         department_id: employee.department?.id?.toString() ?? '',
+        shift_id: employee.shift?.id?.toString() ?? '',
         job_title: employee.job_title ?? '',
         manager_id: employee.manager?.id?.toString() ?? '',
         email: employee.email ?? '',
@@ -197,7 +202,7 @@ function getInitials(firstName: string, lastName: string) {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-export default function EmployeesIndex({ employees, departments, roles, filters }: Props) {
+export default function EmployeesIndex({ employees, departments, shifts, roles, filters }: Props) {
     const { can } = useCan();
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
@@ -209,6 +214,18 @@ export default function EmployeesIndex({ employees, departments, roles, filters 
     const photoSectionRef = useRef<HTMLDivElement>(null);
 
     const form = useForm<EmployeeFormData>(emptyForm());
+
+    const shiftOptions = useMemo(() => {
+        const list = [...shifts];
+        if (
+            editingEmployee?.shift
+            && !list.some((shift) => shift.id === editingEmployee.shift?.id)
+        ) {
+            list.push(editingEmployee.shift);
+        }
+
+        return list;
+    }, [shifts, editingEmployee]);
 
     useEffect(() => {
         if (!form.data.photo) {
@@ -412,6 +429,21 @@ export default function EmployeesIndex({ employees, departments, roles, filters 
             render: (row) => row.department?.name ?? '—',
         },
         {
+            key: 'shift',
+            label: 'Shift',
+            defaultVisible: true,
+            className: 'text-muted-foreground',
+            render: (row) =>
+                row.shift ? (
+                    <span>
+                        {row.shift.name}
+                        <span className="ml-1 font-mono text-[10px] text-muted-foreground/80">({row.shift.code})</span>
+                    </span>
+                ) : (
+                    '—'
+                ),
+        },
+        {
             key: 'job_title',
             label: 'Job Title',
             defaultVisible: true,
@@ -470,6 +502,20 @@ export default function EmployeesIndex({ employees, departments, roles, filters 
                 <SelectContent>
                     <SelectItem value="all">All Departments</SelectItem>
                     {departments.map((d) => (<SelectItem key={d.id} value={d.id.toString()}>{d.name}</SelectItem>))}
+                </SelectContent>
+            </Select>
+
+            <Select value={currentParams.shift_id ?? 'all'} onValueChange={(v) => makeFilterChange('shift_id', v)}>
+                <SelectTrigger className="h-8 text-xs min-w-[120px] border-dashed">
+                    <SelectValue placeholder="Shift" />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="all">All Shifts</SelectItem>
+                    {shifts.map((s) => (
+                        <SelectItem key={s.id} value={s.id.toString()}>
+                            {s.name}
+                        </SelectItem>
+                    ))}
                 </SelectContent>
             </Select>
 
@@ -701,6 +747,24 @@ export default function EmployeesIndex({ employees, departments, roles, filters 
                                         <SelectContent>{departments.map((d) => (<SelectItem key={d.id} value={d.id.toString()}>{d.name}</SelectItem>))}</SelectContent>
                                     </Select>
                                     <div className="min-h-[20px] mt-1" />
+                                </div>
+                                <div className="min-w-0 space-y-2">
+                                    <Label>Shift <span className="text-[10px] text-muted-foreground/80 font-normal ml-1">(Optional)</span></Label>
+                                    <Select
+                                        value={form.data.shift_id || undefined}
+                                        onValueChange={(val) => form.setData('shift_id', val === 'none' ? '' : val)}
+                                    >
+                                        <SelectTrigger className="w-full"><SelectValue placeholder="Select Shift" /></SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="none">No shift</SelectItem>
+                                            {shiftOptions.map((s) => (
+                                                <SelectItem key={s.id} value={s.id.toString()}>
+                                                    {s.name} ({s.code})
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    <div className="min-h-[20px] mt-1"><InputError message={form.errors.shift_id} /></div>
                                 </div>
                                 <div className="min-w-0 space-y-2">
                                     <Label htmlFor="job_title">Job Title <span className="text-[10px] text-muted-foreground/80 font-normal ml-1">(Optional)</span></Label>

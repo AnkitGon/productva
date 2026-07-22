@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Department;
 use App\Models\Employee;
 use App\Models\Role;
+use App\Models\Shift;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -29,7 +30,7 @@ class EmployeeController extends Controller
 
         $query = Employee::query()
             ->forActivePlant($user)
-            ->with(['plant', 'department', 'manager.user', 'user.roles']);
+            ->with(['plant', 'department', 'shift', 'manager.user', 'user.roles']);
 
         // Search
         if ($request->filled('search')) {
@@ -46,6 +47,9 @@ class EmployeeController extends Controller
         // Filters
         if ($request->filled('department_id')) {
             $query->where('department_id', $request->department_id);
+        }
+        if ($request->filled('shift_id')) {
+            $query->where('shift_id', $request->shift_id);
         }
         if ($request->filled('employment_type')) {
             $query->where('employment_type', $request->employment_type);
@@ -73,14 +77,21 @@ class EmployeeController extends Controller
             ->forActivePlant($user)
             ->get(['id', 'name']);
 
+        $shifts = Shift::query()
+            ->forActivePlant($user)
+            ->where('status', 'Active')
+            ->orderBy('start_time')
+            ->get(['id', 'name', 'code', 'status', 'start_time', 'end_time', 'overnight', 'working_minutes']);
+
         // Roles for login assignment (exclude system/admin roles)
         $roles = Role::whereNotIn('slug', ['super-admin', 'admin'])->get(['id', 'name', 'slug']);
 
         return Inertia::render('employees/index', [
             'employees' => $employees,
             'departments' => $departments,
+            'shifts' => $shifts,
             'roles' => $roles,
-            'filters' => $request->only(['department_id', 'employment_type', 'status', 'has_login', 'search', 'sort_by', 'sort_dir', 'per_page']),
+            'filters' => $request->only(['department_id', 'shift_id', 'employment_type', 'status', 'has_login', 'search', 'sort_by', 'sort_dir', 'per_page']),
         ]);
     }
 
@@ -97,6 +108,7 @@ class EmployeeController extends Controller
         $request->merge([
             'manager_id' => $request->filled('manager_id') ? $request->input('manager_id') : null,
             'department_id' => $request->filled('department_id') ? $request->input('department_id') : null,
+            'shift_id' => $request->filled('shift_id') ? $request->input('shift_id') : null,
         ]);
 
         $validated = $request->validate([
@@ -114,6 +126,14 @@ class EmployeeController extends Controller
                 Rule::exists('departments', 'id')
                     ->where('organization_id', $user->organization_id)
                     ->where('plant_id', $user->active_plant_id),
+            ],
+            'shift_id' => [
+                'nullable',
+                Rule::exists('shifts', 'id')
+                    ->where('organization_id', $user->organization_id)
+                    ->where('plant_id', $user->active_plant_id)
+                    ->where('status', 'Active')
+                    ->whereNull('deleted_at'),
             ],
             'job_title' => ['nullable', 'string', 'max:255'],
             'manager_id' => [
@@ -191,7 +211,7 @@ class EmployeeController extends Controller
             abort(403);
         }
 
-        $employee->load(['plant', 'department', 'manager', 'user.roles']);
+        $employee->load(['plant', 'department', 'shift', 'manager', 'user.roles']);
 
         return Inertia::render('employees/profile', [
             'employee' => $employee,
@@ -211,6 +231,7 @@ class EmployeeController extends Controller
         $request->merge([
             'manager_id' => $request->filled('manager_id') ? $request->input('manager_id') : null,
             'department_id' => $request->filled('department_id') ? $request->input('department_id') : null,
+            'shift_id' => $request->filled('shift_id') ? $request->input('shift_id') : null,
         ]);
 
         $validated = $request->validate([
@@ -228,6 +249,20 @@ class EmployeeController extends Controller
                 Rule::exists('departments', 'id')
                     ->where('organization_id', $user->organization_id)
                     ->where('plant_id', $user->active_plant_id),
+            ],
+            'shift_id' => [
+                'nullable',
+                Rule::exists('shifts', 'id')->where(function ($query) use ($user, $employee) {
+                    $query->where('organization_id', $user->organization_id)
+                        ->where('plant_id', $user->active_plant_id)
+                        ->whereNull('deleted_at')
+                        ->where(function ($statusQuery) use ($employee) {
+                            $statusQuery->where('status', 'Active');
+                            if ($employee->shift_id) {
+                                $statusQuery->orWhere('id', $employee->shift_id);
+                            }
+                        });
+                }),
             ],
             'job_title' => ['nullable', 'string', 'max:255'],
             'manager_id' => [

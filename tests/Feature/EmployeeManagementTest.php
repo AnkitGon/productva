@@ -7,6 +7,7 @@ use App\Models\Employee;
 use App\Models\Organization;
 use App\Models\Plant;
 use App\Models\Role;
+use App\Models\Shift;
 use App\Models\User;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -270,6 +271,49 @@ class EmployeeManagementTest extends TestCase
         $this->assertDatabaseMissing('employees', [
             'employee_code' => 'EMP-PHOTO-02',
         ]);
+    }
+
+    public function test_employee_profile_includes_shift_details(): void
+    {
+        $shift = Shift::create([
+            'organization_id' => $this->org->id,
+            'plant_id' => $this->plant->id,
+            'code' => 'MORN',
+            'name' => 'Morning Shift',
+            'start_time' => '06:00',
+            'end_time' => '14:00',
+            'break_minutes' => 60,
+            'grace_in_minutes' => 10,
+            'grace_out_minutes' => 5,
+            'overnight' => false,
+            'working_minutes' => 420,
+            'status' => 'Active',
+            'created_by' => $this->adminUser->id,
+            'updated_by' => $this->adminUser->id,
+        ]);
+
+        $employee = Employee::create([
+            'employee_code' => 'SH-VIEW-01',
+            'first_name' => 'Sam',
+            'last_name' => 'Shift',
+            'organization_id' => $this->org->id,
+            'plant_id' => $this->plant->id,
+            'department_id' => $this->department->id,
+            'shift_id' => $shift->id,
+            'employment_type' => 'Full-Time',
+            'status' => 'Active',
+        ]);
+
+        $response = $this->actingAs($this->adminUser)->get("/employees/{$employee->id}");
+
+        $response->assertSuccessful();
+        $response->assertInertia(fn ($page) => $page
+            ->component('employees/profile')
+            ->where('employee.shift.id', $shift->id)
+            ->where('employee.shift.code', 'MORN')
+            ->where('employee.shift.name', 'Morning Shift')
+            ->where('employee.shift.hours_label', '7h')
+        );
     }
 
     public function test_employee_is_soft_deleted(): void
