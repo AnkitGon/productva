@@ -118,6 +118,12 @@ class RolesAndPermissionsSeeder extends Seeder
             ['slug' => 'shift.create', 'name' => 'Create Shifts'],
             ['slug' => 'shift.update', 'name' => 'Update Shifts'],
             ['slug' => 'shift.delete', 'name' => 'Delete Shifts'],
+
+            // Work Centers
+            ['slug' => 'work-centers.view', 'name' => 'View Work Centers'],
+            ['slug' => 'work-centers.create', 'name' => 'Create Work Centers'],
+            ['slug' => 'work-centers.update', 'name' => 'Update Work Centers'],
+            ['slug' => 'work-centers.delete', 'name' => 'Delete Work Centers'],
         ];
 
         $permissionIds = [];
@@ -156,6 +162,7 @@ class RolesAndPermissionsSeeder extends Seeder
                     'employees.view', 'employees.create', 'employees.update', 'employees.delete', 'employees.export', 'employees.manage',
                     'departments.view', 'departments.create', 'departments.update', 'departments.delete',
                     'shift.view', 'shift.create', 'shift.update', 'shift.delete',
+                    'work-centers.view', 'work-centers.create', 'work-centers.update', 'work-centers.delete',
                 ],
             ],
             'production-manager' => [

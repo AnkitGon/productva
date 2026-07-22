@@ -10,6 +10,7 @@ use App\Http\Controllers\EmployeeController;
 use App\Http\Controllers\OrganizationUserController;
 use App\Http\Controllers\PlantController;
 use App\Http\Controllers\ShiftController;
+use App\Http\Controllers\WorkCenterController;
 use App\Http\Middleware\CheckPermission;
 
 Route::middleware(['auth', 'verified'])->group(function () {
@@ -76,6 +77,20 @@ Route::middleware(['auth', 'verified'])->group(function () {
     });
     Route::middleware(CheckPermission::class.':shift.delete')->group(function () {
         Route::delete('shifts/{shift}', [ShiftController::class, 'destroy'])->name('shifts.destroy');
+    });
+
+    // Work Centers
+    Route::middleware(CheckPermission::class.':work-centers.view')->group(function () {
+        Route::get('work-centers', [WorkCenterController::class, 'index'])->name('work-centers.index');
+    });
+    Route::middleware(CheckPermission::class.':work-centers.create')->group(function () {
+        Route::post('work-centers', [WorkCenterController::class, 'store'])->name('work-centers.store');
+    });
+    Route::middleware(CheckPermission::class.':work-centers.update')->group(function () {
+        Route::put('work-centers/{workCenter}', [WorkCenterController::class, 'update'])->name('work-centers.update');
+    });
+    Route::middleware(CheckPermission::class.':work-centers.delete')->group(function () {
+        Route::delete('work-centers/{workCenter}', [WorkCenterController::class, 'destroy'])->name('work-centers.destroy');
     });
 });
 
