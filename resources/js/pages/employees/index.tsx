@@ -1,6 +1,19 @@
 import { Head, Link, router, useForm } from '@inertiajs/react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, Users, Eye, Edit2, Archive, Camera, Trash2 } from 'lucide-react';
+import {
+    Plus,
+    Users,
+    Eye,
+    Edit2,
+    Archive,
+    Camera,
+    Trash2,
+    UserCheck,
+    UserX,
+    Clock3,
+    Building2,
+    Download,
+} from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -10,6 +23,7 @@ import {
     Dialog,
     DialogContent,
     DialogDescription,
+    DialogFooter,
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
@@ -30,7 +44,6 @@ import { UserSearchSelect } from '@/components/user-search-select';
 import { DataTable, type ColumnDef, type TableMeta } from '@/components/data-table/data-table';
 import { useCan } from '@/hooks/use-can';
 import { StatusBadge } from '@/components/data-table/status-badge';
-
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Employee {
@@ -39,6 +52,8 @@ interface Employee {
     first_name: string;
     last_name: string;
     display_name: string | null;
+    gender: string | null;
+    date_of_birth: string | null;
     name: string;
     photo_path: string | null;
     photo_url?: string | null;
@@ -46,12 +61,13 @@ interface Employee {
     email: string | null;
     phone: string | null;
     mobile: string | null;
+    address: string | null;
     employment_type: string;
     hire_date: string | null;
     status: 'Active' | 'Inactive' | 'On Leave' | 'Terminated';
     user_id: number | null;
-    plant: { id: number; name: string } | null;
-    department: { id: number; name: string } | null;
+    department: { id: number; name: string; code?: string } | null;
+    role: { id: number; name: string; slug: string } | null;
     shift: { id: number; name: string; code: string; status: string } | null;
     manager: {
         id: number;
@@ -74,9 +90,10 @@ interface PaginatedEmployees {
 
 interface Props {
     employees: PaginatedEmployees;
-    departments: Array<{ id: number; name: string }>;
+    departments: Array<{ id: number; name: string; code?: string; status?: string }>;
     shifts: Array<{ id: number; name: string; code: string; status: string }>;
     roles: Array<{ id: number; name: string; slug: string }>;
+    editEmployee?: Employee | null;
     filters: Record<string, string>;
 }
 
@@ -85,19 +102,22 @@ type EmployeeFormData = {
     first_name: string;
     last_name: string;
     display_name: string;
+    gender: string;
+    date_of_birth: string;
     department_id: string;
+    role_id: string;
     shift_id: string;
     job_title: string;
     manager_id: string;
     email: string;
     phone: string;
     mobile: string;
+    address: string;
     employment_type: string;
     hire_date: string;
     status: string;
     create_login: boolean;
     login_email: string;
-    login_role_id: string;
     login_password: string;
     photo: File | null;
     remove_photo: boolean;
@@ -108,19 +128,22 @@ const emptyForm = (): EmployeeFormData => ({
     first_name: '',
     last_name: '',
     display_name: '',
+    gender: '',
+    date_of_birth: '',
     department_id: '',
+    role_id: '',
     shift_id: '',
     job_title: '',
     manager_id: '',
     email: '',
     phone: '',
     mobile: '',
+    address: '',
     employment_type: 'Full-Time',
     hire_date: '',
     status: 'Active',
     create_login: false,
     login_email: '',
-    login_role_id: '',
     login_password: '',
     photo: null,
     remove_photo: false,
@@ -132,19 +155,22 @@ function formFromEmployee(employee: Employee): EmployeeFormData {
         first_name: employee.first_name,
         last_name: employee.last_name,
         display_name: employee.display_name ?? '',
+        gender: employee.gender ?? '',
+        date_of_birth: employee.date_of_birth ? employee.date_of_birth.slice(0, 10) : '',
         department_id: employee.department?.id?.toString() ?? '',
+        role_id: employee.role?.id?.toString() ?? '',
         shift_id: employee.shift?.id?.toString() ?? '',
         job_title: employee.job_title ?? '',
         manager_id: employee.manager?.id?.toString() ?? '',
         email: employee.email ?? '',
         phone: employee.phone ?? '',
         mobile: employee.mobile ?? '',
+        address: employee.address ?? '',
         employment_type: employee.employment_type,
         hire_date: employee.hire_date ? employee.hire_date.slice(0, 10) : '',
         status: employee.status,
         create_login: !!employee.user_id,
         login_email: employee.user?.email ?? '',
-        login_role_id: employee.user?.roles?.[0]?.id?.toString() ?? '',
         login_password: '',
         photo: null,
         remove_photo: false,
@@ -160,7 +186,8 @@ function managerLabel(employee: Employee | null): string {
         return `${employee.manager.user.name} (${employee.manager.user.email})`;
     }
 
-    return `${employee.manager.first_name} ${employee.manager.last_name}`;
+    const name = `${employee.manager.first_name} ${employee.manager.last_name}`.trim();
+    return name;
 }
 
 const MAX_PHOTO_BYTES = 2 * 1024 * 1024;
@@ -202,18 +229,97 @@ function getInitials(firstName: string, lastName: string) {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-export default function EmployeesIndex({ employees, departments, shifts, roles, filters }: Props) {
+export default function EmployeesIndex({ employees, departments, shifts, roles, editEmployee = null, filters }: Props) {
     const { can } = useCan();
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+    const openedEditFromQuery = useRef(false);
     const [archiveEmployee, setArchiveEmployee] = useState<Employee | null>(null);
     const [isArchiving, setIsArchiving] = useState(false);
     const [selectedManagerLabel, setSelectedManagerLabel] = useState('');
     const [photoPreview, setPhotoPreview] = useState<string | null>(null);
     const photoInputRef = useRef<HTMLInputElement>(null);
     const photoSectionRef = useRef<HTMLDivElement>(null);
+    const [bulkIds, setBulkIds] = useState<number[]>([]);
+    const [bulkClearSelection, setBulkClearSelection] = useState<(() => void) | null>(null);
+    const [bulkAssignShiftOpen, setBulkAssignShiftOpen] = useState(false);
+    const [bulkAssignDepartmentOpen, setBulkAssignDepartmentOpen] = useState(false);
+    const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+    const [bulkShiftId, setBulkShiftId] = useState('');
+    const [bulkDepartmentId, setBulkDepartmentId] = useState('');
+    const [bulkProcessing, setBulkProcessing] = useState(false);
 
     const form = useForm<EmployeeFormData>(emptyForm());
+
+    const activeDepartments = useMemo(
+        () => departments.filter((d) => !d.status || d.status === 'Active'),
+        [departments],
+    );
+
+    const submitBulk = (
+        payload: Record<string, unknown>,
+        clearSelection?: () => void,
+        options?: { onFinish?: () => void },
+    ) => {
+        setBulkProcessing(true);
+        router.post('/employees/bulk', payload, {
+            preserveScroll: true,
+            onSuccess: () => {
+                clearSelection?.();
+                setBulkAssignShiftOpen(false);
+                setBulkAssignDepartmentOpen(false);
+                setBulkDeleteOpen(false);
+                setBulkShiftId('');
+                setBulkDepartmentId('');
+                setBulkIds([]);
+            },
+            onFinish: () => {
+                setBulkProcessing(false);
+                options?.onFinish?.();
+            },
+        });
+    };
+
+    const exportBulk = async (ids: number[], clearSelection?: () => void) => {
+        setBulkProcessing(true);
+        try {
+            const xsrf = document.cookie
+                .split('; ')
+                .find((row) => row.startsWith('XSRF-TOKEN='))
+                ?.split('=')[1];
+
+            const response = await fetch('/employees/bulk', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Accept: 'text/csv',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    ...(xsrf ? { 'X-XSRF-TOKEN': decodeURIComponent(xsrf) } : {}),
+                },
+                body: JSON.stringify({ action: 'export', ids }),
+            });
+
+            if (!response.ok) {
+                toast.error('Unable to export employees.');
+                return;
+            }
+
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement('a');
+            anchor.href = url;
+            anchor.download = `employees-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.csv`;
+            anchor.click();
+            URL.revokeObjectURL(url);
+            clearSelection?.();
+            toast.success('Employees exported.');
+        } catch {
+            toast.error('Unable to export employees.');
+        } finally {
+            setBulkProcessing(false);
+        }
+    };
 
     const shiftOptions = useMemo(() => {
         const list = [...shifts];
@@ -279,6 +385,16 @@ export default function EmployeesIndex({ employees, departments, shifts, roles, 
         form.clearErrors();
         setIsDialogOpen(true);
     };
+
+    useEffect(() => {
+        if (!editEmployee || openedEditFromQuery.current) {
+            return;
+        }
+
+        openedEditFromQuery.current = true;
+        openEdit(editEmployee);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- open once from ?edit= query
+    }, [editEmployee]);
 
     const closeDialog = () => {
         setIsDialogOpen(false);
@@ -415,18 +531,25 @@ export default function EmployeesIndex({ employees, departments, shifts, roles, 
             ),
         },
         {
-            key: 'plant',
-            label: 'Plant',
-            defaultVisible: true,
-            className: 'text-muted-foreground',
-            render: (row) => row.plant?.name ?? '—',
-        },
-        {
             key: 'department',
             label: 'Department',
             defaultVisible: true,
             className: 'text-muted-foreground',
-            render: (row) => row.department?.name ?? '—',
+            render: (row) =>
+                row.department ? (
+                    can('departments.view') ? (
+                        <Link
+                            href={`/departments/${row.department.id}`}
+                            className="hover:underline hover:text-primary transition-colors"
+                        >
+                            {row.department.name}
+                        </Link>
+                    ) : (
+                        row.department.name
+                    )
+                ) : (
+                    '—'
+                ),
         },
         {
             key: 'shift',
@@ -473,6 +596,59 @@ export default function EmployeesIndex({ employees, departments, shifts, roles, 
                 ) : (
                     <span className="text-xs text-muted-foreground">None</span>
                 ),
+        },
+        {
+            key: 'email',
+            label: 'Email',
+            defaultVisible: false,
+            className: 'text-muted-foreground text-xs',
+            render: (row) => row.email ?? '—',
+        },
+        {
+            key: 'phone',
+            label: 'Phone',
+            defaultVisible: false,
+            className: 'text-muted-foreground text-xs',
+            render: (row) => row.phone ?? '—',
+        },
+        {
+            key: 'mobile',
+            label: 'Mobile',
+            defaultVisible: false,
+            className: 'text-muted-foreground text-xs',
+            render: (row) => row.mobile ?? '—',
+        },
+        {
+            key: 'display_name',
+            label: 'Display Name',
+            defaultVisible: false,
+            className: 'text-muted-foreground',
+            render: (row) => row.display_name ?? '—',
+        },
+        {
+            key: 'hire_date',
+            label: 'Hire Date',
+            sortable: true,
+            defaultVisible: false,
+            className: 'text-muted-foreground text-xs',
+            render: (row) => (row.hire_date ? row.hire_date.slice(0, 10) : '—'),
+        },
+        {
+            key: 'role',
+            label: 'Role',
+            defaultVisible: false,
+            className: 'text-muted-foreground',
+            render: (row) => row.role?.name ?? '—',
+        },
+        {
+            key: 'manager',
+            label: 'Manager',
+            defaultVisible: false,
+            className: 'text-muted-foreground',
+            render: (row) =>
+                row.manager
+                    ? `${row.manager.first_name} ${row.manager.last_name}`.trim()
+                    : '—',
         },
     ];
 
@@ -594,6 +770,104 @@ export default function EmployeesIndex({ employees, departments, shifts, roles, 
                     }
                     filterSlot={filterSlot}
                     entityLabel="employees"
+                    selectable={
+                        can('employees.update')
+                        || can('employees.export')
+                        || can('employees.delete')
+                    }
+                    bulkActions={({ selectedIds, clearSelection }) => {
+                        const ids = selectedIds.map(Number);
+                        return (
+                            <>
+                                {can('employees.update') && (
+                                    <>
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-7 gap-1.5 text-xs"
+                                            disabled={bulkProcessing}
+                                            onClick={() => submitBulk({ action: 'activate', ids }, clearSelection)}
+                                        >
+                                            <UserCheck className="size-3.5" />
+                                            Activate
+                                        </Button>
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-7 gap-1.5 text-xs"
+                                            disabled={bulkProcessing}
+                                            onClick={() => submitBulk({ action: 'deactivate', ids }, clearSelection)}
+                                        >
+                                            <UserX className="size-3.5" />
+                                            Deactivate
+                                        </Button>
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-7 gap-1.5 text-xs"
+                                            disabled={bulkProcessing}
+                                            onClick={() => {
+                                                setBulkIds(ids);
+                                                setBulkClearSelection(() => clearSelection);
+                                                setBulkAssignShiftOpen(true);
+                                            }}
+                                        >
+                                            <Clock3 className="size-3.5" />
+                                            Assign Shift
+                                        </Button>
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-7 gap-1.5 text-xs"
+                                            disabled={bulkProcessing}
+                                            onClick={() => {
+                                                setBulkIds(ids);
+                                                setBulkClearSelection(() => clearSelection);
+                                                setBulkAssignDepartmentOpen(true);
+                                            }}
+                                        >
+                                            <Building2 className="size-3.5" />
+                                            Assign Department
+                                        </Button>
+                                    </>
+                                )}
+                                {can('employees.export') && (
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-7 gap-1.5 text-xs"
+                                        disabled={bulkProcessing}
+                                        onClick={() => exportBulk(ids, clearSelection)}
+                                    >
+                                        <Download className="size-3.5" />
+                                        Export
+                                    </Button>
+                                )}
+                                {can('employees.delete') && (
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-7 gap-1.5 text-xs text-destructive hover:text-destructive"
+                                        disabled={bulkProcessing}
+                                        onClick={() => {
+                                            setBulkIds(ids);
+                                            setBulkClearSelection(() => clearSelection);
+                                            setBulkDeleteOpen(true);
+                                        }}
+                                    >
+                                        <Trash2 className="size-3.5" />
+                                        Delete
+                                    </Button>
+                                )}
+                            </>
+                        );
+                    }}
                     rowActions={(row) => [
                         {
                             label: 'View Profile',
@@ -648,6 +922,142 @@ export default function EmployeesIndex({ employees, departments, shifts, roles, 
                 }}
                 processing={isArchiving}
             />
+
+            <ConfirmDeleteDialog
+                open={bulkDeleteOpen}
+                onOpenChange={(open) => {
+                    if (!open) {
+                        setBulkDeleteOpen(false);
+                        setBulkIds([]);
+                    }
+                }}
+                title="Archive selected employees?"
+                description={
+                    <>
+                        Archive <span className="font-semibold text-foreground">{bulkIds.length}</span> selected employee
+                        {bulkIds.length === 1 ? '' : 's'}? This will soft-delete their profiles.
+                    </>
+                }
+                confirmLabel="Archive Selected"
+                onConfirm={() => submitBulk({ action: 'delete', ids: bulkIds }, bulkClearSelection ?? undefined)}
+                processing={bulkProcessing}
+            />
+
+            <Dialog open={bulkAssignShiftOpen} onOpenChange={setBulkAssignShiftOpen}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Assign Shift</DialogTitle>
+                        <DialogDescription>
+                            Assign a shift to {bulkIds.length} selected employee{bulkIds.length === 1 ? '' : 's'}.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-2">
+                        <div className="space-y-2">
+                            <Label>Shift</Label>
+                            <Select value={bulkShiftId} onValueChange={setBulkShiftId}>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Select shift" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {shifts.map((shift) => (
+                                        <SelectItem key={shift.id} value={shift.id.toString()}>
+                                            {shift.name} ({shift.code})
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <DialogFooter className="flex items-center justify-end gap-2">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                className="font-semibold text-xs"
+                                disabled={bulkProcessing}
+                                onClick={() => setBulkAssignShiftOpen(false)}
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                type="button"
+                                className="font-semibold text-xs"
+                                disabled={bulkProcessing || !bulkShiftId}
+                                onClick={() => {
+                                    if (!bulkShiftId) {
+                                        toast.error('Select a shift.');
+                                        return;
+                                    }
+                                    submitBulk(
+                                        { action: 'assign_shift', ids: bulkIds, shift_id: Number(bulkShiftId) },
+                                        bulkClearSelection ?? undefined,
+                                    );
+                                }}
+                            >
+                                {bulkProcessing ? 'Assigning…' : 'Assign Shift'}
+                            </Button>
+                        </DialogFooter>
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={bulkAssignDepartmentOpen} onOpenChange={setBulkAssignDepartmentOpen}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Assign Department</DialogTitle>
+                        <DialogDescription>
+                            Assign a department to {bulkIds.length} selected employee{bulkIds.length === 1 ? '' : 's'}.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-2">
+                        <div className="space-y-2">
+                            <Label>Department</Label>
+                            <Select value={bulkDepartmentId} onValueChange={setBulkDepartmentId}>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Select department" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {activeDepartments.map((department) => (
+                                        <SelectItem key={department.id} value={department.id.toString()}>
+                                            {department.name}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <DialogFooter className="flex items-center justify-end gap-2">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                className="font-semibold text-xs"
+                                disabled={bulkProcessing}
+                                onClick={() => setBulkAssignDepartmentOpen(false)}
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                type="button"
+                                className="font-semibold text-xs"
+                                disabled={bulkProcessing || !bulkDepartmentId}
+                                onClick={() => {
+                                    if (!bulkDepartmentId) {
+                                        toast.error('Select a department.');
+                                        return;
+                                    }
+                                    submitBulk(
+                                        {
+                                            action: 'assign_department',
+                                            ids: bulkIds,
+                                            department_id: Number(bulkDepartmentId),
+                                        },
+                                        bulkClearSelection ?? undefined,
+                                    );
+                                }}
+                            >
+                                {bulkProcessing ? 'Assigning…' : 'Assign Department'}
+                            </Button>
+                        </DialogFooter>
+                    </div>
+                </DialogContent>
+            </Dialog>
 
             {/* Create / Edit Employee Dialog */}
             <Dialog open={isDialogOpen} onOpenChange={(open) => { if (!open) closeDialog(); }}>
@@ -713,11 +1123,6 @@ export default function EmployeesIndex({ employees, departments, shifts, roles, 
 
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-4">
                                 <div className="min-w-0 space-y-2">
-                                    <Label htmlFor="employee_code">Employee Code <span className="text-destructive">*</span></Label>
-                                    <Input id="employee_code" placeholder="e.g. EMP-102" value={form.data.employee_code} onChange={(e) => form.setData('employee_code', e.target.value)} />
-                                    <div className="min-h-[20px] mt-1"><InputError message={form.errors.employee_code} /></div>
-                                </div>
-                                <div className="min-w-0 space-y-2">
                                     <Label htmlFor="display_name">Display Name <span className="text-[10px] text-muted-foreground/80 font-normal ml-1">(Optional)</span></Label>
                                     <Input id="display_name" placeholder="Preferred nickname" value={form.data.display_name} onChange={(e) => form.setData('display_name', e.target.value)} />
                                     <div className="min-h-[20px] mt-1" />
@@ -732,6 +1137,27 @@ export default function EmployeesIndex({ employees, departments, shifts, roles, 
                                     <Input id="last_name" placeholder="Last Name" value={form.data.last_name} onChange={(e) => form.setData('last_name', e.target.value)} />
                                     <div className="min-h-[20px] mt-1"><InputError message={form.errors.last_name} /></div>
                                 </div>
+                                <div className="min-w-0 space-y-2">
+                                    <Label>Gender <span className="text-[10px] text-muted-foreground/80 font-normal ml-1">(Optional)</span></Label>
+                                    <Select
+                                        value={form.data.gender || undefined}
+                                        onValueChange={(val) => form.setData('gender', val)}
+                                    >
+                                        <SelectTrigger className="w-full"><SelectValue placeholder="Select gender" /></SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="Male">Male</SelectItem>
+                                            <SelectItem value="Female">Female</SelectItem>
+                                            <SelectItem value="Other">Other</SelectItem>
+                                            <SelectItem value="Prefer not to say">Prefer not to say</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                    <div className="min-h-[20px] mt-1"><InputError message={form.errors.gender} /></div>
+                                </div>
+                                <div className="min-w-0 space-y-2">
+                                    <Label htmlFor="date_of_birth">Date of Birth <span className="text-[10px] text-muted-foreground/80 font-normal ml-1">(Optional)</span></Label>
+                                    <Input id="date_of_birth" type="date" value={form.data.date_of_birth} onChange={(e) => form.setData('date_of_birth', e.target.value)} />
+                                    <div className="min-h-[20px] mt-1"><InputError message={form.errors.date_of_birth} /></div>
+                                </div>
                             </div>
                         </div>
 
@@ -744,9 +1170,33 @@ export default function EmployeesIndex({ employees, departments, shifts, roles, 
                                     <Label>Department <span className="text-[10px] text-muted-foreground/80 font-normal ml-1">(Optional)</span></Label>
                                     <Select value={form.data.department_id || undefined} onValueChange={(val) => form.setData('department_id', val)}>
                                         <SelectTrigger className="w-full"><SelectValue placeholder="Select Department" /></SelectTrigger>
-                                        <SelectContent>{departments.map((d) => (<SelectItem key={d.id} value={d.id.toString()}>{d.name}</SelectItem>))}</SelectContent>
+                                        <SelectContent>
+                                            {departments
+                                                .filter((d) => d.status === 'Active' || d.id.toString() === form.data.department_id)
+                                                .map((d) => (
+                                                    <SelectItem key={d.id} value={d.id.toString()}>
+                                                        {d.name}{d.status && d.status !== 'Active' ? ' (Inactive)' : ''}
+                                                    </SelectItem>
+                                                ))}
+                                        </SelectContent>
                                     </Select>
                                     <div className="min-h-[20px] mt-1" />
+                                </div>
+                                <div className="min-w-0 space-y-2">
+                                    <Label>Role <span className="text-[10px] text-muted-foreground/80 font-normal ml-1">(Optional)</span></Label>
+                                    <Select
+                                        value={form.data.role_id || undefined}
+                                        onValueChange={(val) => form.setData('role_id', val === 'none' ? '' : val)}
+                                    >
+                                        <SelectTrigger className="w-full"><SelectValue placeholder="Select Role" /></SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="none">No role</SelectItem>
+                                            {roles.map((r) => (
+                                                <SelectItem key={r.id} value={r.id.toString()}>{r.name}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    <div className="min-h-[20px] mt-1"><InputError message={form.errors.role_id} /></div>
                                 </div>
                                 <div className="min-w-0 space-y-2">
                                     <Label>Shift <span className="text-[10px] text-muted-foreground/80 font-normal ml-1">(Optional)</span></Label>
@@ -776,9 +1226,10 @@ export default function EmployeesIndex({ employees, departments, shifts, roles, 
                                     <UserSearchSelect
                                         value={form.data.manager_id}
                                         selectedLabel={selectedManagerLabel}
-                                        placeholder="Search users…"
+                                        placeholder="Search employees…"
+                                        searchPlaceholder="Type to search employees…"
                                         withEmployee
-                                        excludeUserId={editingEmployee?.user_id ?? null}
+                                        excludeEmployeeId={editingEmployee?.id ?? null}
                                         onChange={(val, option) => {
                                             form.setData('manager_id', val);
                                             setSelectedManagerLabel(option?.label ?? '');
@@ -808,6 +1259,18 @@ export default function EmployeesIndex({ employees, departments, shifts, roles, 
                                     <Label htmlFor="mobile">Mobile <span className="text-[10px] text-muted-foreground/80 font-normal ml-1">(Optional)</span></Label>
                                     <Input id="mobile" placeholder="Cell phone" value={form.data.mobile} onChange={(e) => form.setData('mobile', e.target.value)} />
                                     <div className="min-h-[20px] mt-1" />
+                                </div>
+                                <div className="min-w-0 space-y-2 sm:col-span-2 lg:col-span-3">
+                                    <Label htmlFor="address">Address <span className="text-[10px] text-muted-foreground/80 font-normal ml-1">(Optional)</span></Label>
+                                    <textarea
+                                        id="address"
+                                        rows={2}
+                                        placeholder="Street, city, postal code"
+                                        value={form.data.address}
+                                        onChange={(e) => form.setData('address', e.target.value)}
+                                        className="border-input placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 flex w-full rounded-md border bg-transparent px-3 py-2 text-sm shadow-xs transition-[color,box-shadow] outline-none focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50"
+                                    />
+                                    <div className="min-h-[20px] mt-1"><InputError message={form.errors.address} /></div>
                                 </div>
                             </div>
                         </div>
@@ -873,14 +1336,6 @@ export default function EmployeesIndex({ employees, departments, shifts, roles, 
                                         <div className="min-h-[20px] mt-1"><InputError message={form.errors.login_email} /></div>
                                     </div>
                                     <div className="min-w-0 space-y-2">
-                                        <Label>Role <span className="text-destructive">*</span></Label>
-                                        <Select value={form.data.login_role_id || undefined} onValueChange={(val) => form.setData('login_role_id', val)}>
-                                            <SelectTrigger className="w-full"><SelectValue placeholder="Select Role" /></SelectTrigger>
-                                            <SelectContent>{roles.map((r) => (<SelectItem key={r.id} value={r.id.toString()}>{r.name}</SelectItem>))}</SelectContent>
-                                        </Select>
-                                        <div className="min-h-[20px] mt-1"><InputError message={form.errors.login_role_id} /></div>
-                                    </div>
-                                    <div className="min-w-0 space-y-2 sm:col-span-2">
                                         <Label htmlFor="login_password">
                                             {editingEmployee?.user_id ? 'New Password' : 'Temporary Password'}{' '}
                                             {editingEmployee?.user_id

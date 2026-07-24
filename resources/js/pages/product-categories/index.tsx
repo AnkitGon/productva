@@ -43,6 +43,7 @@ interface ProductCategory {
     status: 'Active' | 'Inactive';
     parent_id: number | null;
     products_count?: number;
+    children_count?: number;
     parent?: Pick<ParentOption, 'id' | 'code' | 'name'> | null;
 }
 
@@ -204,7 +205,15 @@ export default function ProductCategoriesIndex({
             key: 'name',
             label: 'Category',
             sortable: true,
-            render: (row) => <span className="font-semibold text-foreground">{row.name}</span>,
+            render: (row) => (
+                <button
+                    type="button"
+                    className="font-semibold text-foreground hover:underline cursor-pointer text-left"
+                    onClick={() => router.visit(`/products?category_id=${row.id}`)}
+                >
+                    {row.name}
+                </button>
+            ),
         },
         {
             key: 'parent',
@@ -218,7 +227,21 @@ export default function ProductCategoriesIndex({
             className: 'text-muted-foreground',
             render: (row) => {
                 const count = row.products_count ?? 0;
-                return `${count} ${count === 1 ? 'product' : 'products'}`;
+                const label = `${count} ${count === 1 ? 'product' : 'products'}`;
+
+                if (count === 0) {
+                    return label;
+                }
+
+                return (
+                    <button
+                        type="button"
+                        className="text-foreground hover:underline cursor-pointer font-medium"
+                        onClick={() => router.visit(`/products?category_id=${row.id}`)}
+                    >
+                        {label}
+                    </button>
+                );
             },
         },
         {
@@ -226,6 +249,20 @@ export default function ProductCategoriesIndex({
             label: 'Status',
             sortable: true,
             render: (row) => <StatusBadge status={row.status} />,
+        },
+        {
+            key: 'description',
+            label: 'Description',
+            defaultVisible: false,
+            className: 'text-muted-foreground',
+            render: (row) => row.description ?? '—',
+        },
+        {
+            key: 'sort_order',
+            label: 'Sort Order',
+            defaultVisible: false,
+            className: 'text-muted-foreground',
+            render: (row) => row.sort_order ?? 0,
         },
     ];
 
@@ -329,7 +366,11 @@ export default function ProductCategoriesIndex({
                             });
                         }
 
-                        if (can('product-category.delete') && (row.products_count ?? 0) === 0) {
+                        if (
+                            can('product-category.delete')
+                            && (row.products_count ?? 0) === 0
+                            && (row.children_count ?? 0) === 0
+                        ) {
                             actions.push({
                                 label: 'Archive',
                                 icon: Trash2,
@@ -387,20 +428,7 @@ export default function ProductCategoriesIndex({
                                 <InputError message={form.errors.parent_id} />
                             </div>
 
-                            <div className="space-y-2">
-                                <Label htmlFor="code">
-                                    Category Code <span className="text-destructive">*</span>
-                                </Label>
-                                <Input
-                                    id="code"
-                                    value={form.data.code}
-                                    onChange={(e) => form.setData('code', e.target.value.toUpperCase())}
-                                    placeholder="RAW"
-                                    maxLength={20}
-                                    required
-                                />
-                                <InputError message={form.errors.code} />
-                            </div>
+
 
                             <div className="space-y-2">
                                 <Label htmlFor="sort_order">Sort Order</Label>
@@ -474,7 +502,7 @@ export default function ProductCategoriesIndex({
                 title="Archive Product Category?"
                 description={
                     <>
-                        Archive <span className="font-semibold text-foreground">{deleteConfirmCategory?.name}</span>? Categories with products cannot be archived.
+                        Archive <span className="font-semibold text-foreground">{deleteConfirmCategory?.name}</span>? Categories with products or child categories cannot be deleted.
                     </>
                 }
                 confirmLabel="Archive Category"

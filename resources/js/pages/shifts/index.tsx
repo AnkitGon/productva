@@ -1,4 +1,4 @@
-import { Head, router, useForm } from '@inertiajs/react';
+import { Head, Link, router, useForm } from '@inertiajs/react';
 import React, { useMemo, useState } from 'react';
 import { Clock3, Edit2, Moon, Plus, Trash2 } from 'lucide-react';
 
@@ -27,6 +27,23 @@ import { DataTable, type ColumnDef, type TableMeta } from '@/components/data-tab
 import { StatusBadge } from '@/components/data-table/status-badge';
 import type { RowAction } from '@/components/data-table/data-table-row-actions';
 import { useCan } from '@/hooks/use-can';
+import { cn } from '@/lib/utils';
+
+const SHIFT_COLOR_STYLES: Record<string, string> = {
+    blue: 'bg-sky-500',
+    orange: 'bg-orange-500',
+    purple: 'bg-violet-500',
+    green: 'bg-emerald-500',
+    slate: 'bg-slate-500',
+};
+
+const SHIFT_COLOR_LABELS: Record<string, string> = {
+    blue: 'Blue (Morning)',
+    orange: 'Orange (Evening)',
+    purple: 'Purple (Night)',
+    green: 'Green (General)',
+    slate: 'Slate',
+};
 
 interface ShiftTemplate {
     name: string;
@@ -35,6 +52,7 @@ interface ShiftTemplate {
     end_time: string;
     overnight: boolean;
     break_minutes: number;
+    color: string;
 }
 
 interface Shift {
@@ -50,6 +68,7 @@ interface Shift {
     working_minutes: number;
     hours_label: string;
     status: 'Active' | 'Inactive';
+    color: string;
     notes: string | null;
     is_currently_active?: boolean;
     employees_count?: number;
@@ -69,6 +88,7 @@ interface Props {
     shifts: PaginatedShifts;
     filters: Record<string, string>;
     templates: ShiftTemplate[];
+    colors: string[];
 }
 
 type ShiftFormData = {
@@ -81,6 +101,7 @@ type ShiftFormData = {
     grace_in_minutes: string;
     grace_out_minutes: string;
     status: string;
+    color: string;
     notes: string;
 };
 
@@ -114,6 +135,7 @@ function emptyForm(): ShiftFormData {
         grace_in_minutes: '10',
         grace_out_minutes: '5',
         status: 'Active',
+        color: 'blue',
         notes: '',
     };
 }
@@ -129,11 +151,12 @@ function formFromShift(shift: Shift): ShiftFormData {
         grace_in_minutes: String(shift.grace_in_minutes ?? 0),
         grace_out_minutes: String(shift.grace_out_minutes ?? 0),
         status: shift.status,
+        color: shift.color || 'blue',
         notes: shift.notes ?? '',
     };
 }
 
-export default function ShiftsIndex({ shifts, filters, templates }: Props) {
+export default function ShiftsIndex({ shifts, filters, templates, colors }: Props) {
     const { can } = useCan();
 
     const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -189,11 +212,11 @@ export default function ShiftsIndex({ shifts, filters, templates }: Props) {
         form.setData({
             ...form.data,
             name: template.name,
-            code: template.code,
             start_time: template.start_time,
             end_time: template.end_time,
             overnight: template.overnight,
             break_minutes: String(template.break_minutes),
+            color: template.color,
         });
     };
 
@@ -236,11 +259,17 @@ export default function ShiftsIndex({ shifts, filters, templates }: Props) {
             label: 'Shift',
             sortable: true,
             render: (row) => (
-                <div className="flex flex-col gap-0.5">
-                    <span className="font-semibold text-foreground">{row.name}</span>
-                    {row.is_currently_active && (
-                        <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">Currently active</span>
-                    )}
+                <div className="flex items-start gap-2.5">
+                    <span
+                        className={cn('mt-1 size-2.5 shrink-0 rounded-full', SHIFT_COLOR_STYLES[row.color] ?? SHIFT_COLOR_STYLES.blue)}
+                        title={SHIFT_COLOR_LABELS[row.color] ?? row.color}
+                    />
+                    <div className="flex flex-col gap-0.5">
+                        <span className="font-semibold text-foreground">{row.name}</span>
+                        {row.is_currently_active && (
+                            <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">Currently active</span>
+                        )}
+                    </div>
                 </div>
             ),
         },
@@ -274,7 +303,19 @@ export default function ShiftsIndex({ shifts, filters, templates }: Props) {
             className: 'text-muted-foreground',
             render: (row) => {
                 const count = row.employees_count ?? 0;
-                return `${count} ${count === 1 ? 'employee' : 'employees'}`;
+                const label = `${count} ${count === 1 ? 'employee' : 'employees'}`;
+                if (!can('employees.view')) {
+                    return label;
+                }
+                return (
+                    <Link
+                        href={`/employees?shift_id=${row.id}`}
+                        className="hover:underline hover:text-primary transition-colors"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        {label}
+                    </Link>
+                );
             },
         },
         {
@@ -282,6 +323,27 @@ export default function ShiftsIndex({ shifts, filters, templates }: Props) {
             label: 'Status',
             sortable: true,
             render: (row) => <StatusBadge status={row.status} />,
+        },
+        {
+            key: 'break_minutes',
+            label: 'Break (min)',
+            defaultVisible: false,
+            className: 'text-muted-foreground',
+            render: (row) => row.break_minutes ?? 0,
+        },
+        {
+            key: 'overnight',
+            label: 'Overnight',
+            defaultVisible: false,
+            className: 'text-muted-foreground',
+            render: (row) => (row.overnight ? 'Yes' : 'No'),
+        },
+        {
+            key: 'color',
+            label: 'Color',
+            defaultVisible: false,
+            className: 'text-muted-foreground',
+            render: (row) => SHIFT_COLOR_LABELS[row.color] ?? row.color ?? '—',
         },
     ];
 
@@ -375,6 +437,11 @@ export default function ShiftsIndex({ shifts, filters, templates }: Props) {
                         ) : undefined
                     }
                     filterSlot={filterSlot}
+                    onRowClick={
+                        can('employees.view')
+                            ? (row) => router.visit(`/employees?shift_id=${row.id}`)
+                            : undefined
+                    }
                     rowActions={(row) => {
                         const actions: RowAction<Shift>[] = [];
 
@@ -455,20 +522,7 @@ export default function ShiftsIndex({ shifts, filters, templates }: Props) {
                                 <InputError message={form.errors.name} />
                             </div>
 
-                            <div className="space-y-2">
-                                <Label htmlFor="code">
-                                    Shift Code <span className="text-destructive">*</span>
-                                </Label>
-                                <Input
-                                    id="code"
-                                    value={form.data.code}
-                                    onChange={(e) => form.setData('code', e.target.value.toUpperCase())}
-                                    placeholder="MORN"
-                                    maxLength={20}
-                                    required
-                                />
-                                <InputError message={form.errors.code} />
-                            </div>
+
 
                             <div className="space-y-2">
                                 <Label htmlFor="start_time">
@@ -530,7 +584,7 @@ export default function ShiftsIndex({ shifts, filters, templates }: Props) {
                             </div>
 
                             <div className="space-y-2">
-                                <Label htmlFor="grace_in_minutes">Grace In</Label>
+                                <Label htmlFor="grace_in_minutes">Late Arrival Grace (minutes)</Label>
                                 <Input
                                     id="grace_in_minutes"
                                     type="number"
@@ -542,7 +596,7 @@ export default function ShiftsIndex({ shifts, filters, templates }: Props) {
                             </div>
 
                             <div className="space-y-2">
-                                <Label htmlFor="grace_out_minutes">Grace Out</Label>
+                                <Label htmlFor="grace_out_minutes">Early Leave Grace (minutes)</Label>
                                 <Input
                                     id="grace_out_minutes"
                                     type="number"
@@ -570,13 +624,41 @@ export default function ShiftsIndex({ shifts, filters, templates }: Props) {
                                 <InputError message={form.errors.status} />
                             </div>
 
+                            <div className="space-y-2">
+                                <Label>Shift Color</Label>
+                                <div className="flex flex-wrap gap-2 pt-1">
+                                    {colors.map((color) => (
+                                        <button
+                                            key={color}
+                                            type="button"
+                                            title={SHIFT_COLOR_LABELS[color] ?? color}
+                                            onClick={() => form.setData('color', color)}
+                                            className={cn(
+                                                'size-8 rounded-full border-2 transition-shadow',
+                                                SHIFT_COLOR_STYLES[color] ?? SHIFT_COLOR_STYLES.blue,
+                                                form.data.color === color
+                                                    ? 'border-foreground ring-2 ring-foreground/20'
+                                                    : 'border-transparent opacity-80 hover:opacity-100',
+                                            )}
+                                        />
+                                    ))}
+                                </div>
+                                <InputError message={form.errors.color} />
+                            </div>
+
                             <div className="space-y-2 sm:col-span-2">
-                                <Label htmlFor="notes">Notes</Label>
+                                <div className="flex items-center justify-between gap-2">
+                                    <Label htmlFor="notes">Notes</Label>
+                                    <span className="text-[11px] text-muted-foreground">
+                                        {form.data.notes.length}/1000
+                                    </span>
+                                </div>
                                 <textarea
                                     id="notes"
                                     value={form.data.notes}
-                                    onChange={(e) => form.setData('notes', e.target.value)}
+                                    onChange={(e) => form.setData('notes', e.target.value.slice(0, 1000))}
                                     rows={3}
+                                    maxLength={1000}
                                     placeholder="Optional notes about this shift"
                                     className="flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50"
                                 />

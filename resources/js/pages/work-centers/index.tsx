@@ -1,4 +1,4 @@
-import { Head, router, useForm } from '@inertiajs/react';
+import { Head, Link, router, useForm } from '@inertiajs/react';
 import React, { useState } from 'react';
 import { Edit2, Factory, Plus, Trash2 } from 'lucide-react';
 
@@ -31,6 +31,8 @@ import { useCan } from '@/hooks/use-can';
 interface DepartmentOption {
     id: number;
     name: string;
+    code?: string;
+    status?: string;
 }
 
 interface SupervisorOption {
@@ -200,7 +202,21 @@ export default function WorkCentersIndex({ workCenters, departments, filters }: 
             key: 'department',
             label: 'Department',
             className: 'text-muted-foreground',
-            render: (row) => row.department?.name ?? '—',
+            render: (row) =>
+                row.department ? (
+                    can('departments.view') ? (
+                        <Link
+                            href={`/departments/${row.department.id}`}
+                            className="hover:underline hover:text-primary transition-colors"
+                        >
+                            {row.department.name}
+                        </Link>
+                    ) : (
+                        row.department.name
+                    )
+                ) : (
+                    '—'
+                ),
         },
         {
             key: 'supervisor',
@@ -222,6 +238,25 @@ export default function WorkCentersIndex({ workCenters, departments, filters }: 
             label: 'Status',
             sortable: true,
             render: (row) => <StatusBadge status={row.status} />,
+        },
+        {
+            key: 'description',
+            label: 'Description',
+            defaultVisible: false,
+            className: 'text-muted-foreground',
+            render: (row) => row.description ?? '—',
+        },
+        {
+            key: 'capacity',
+            label: 'Capacity',
+            defaultVisible: false,
+            className: 'text-muted-foreground',
+            render: (row) => {
+                if (row.capacity === null || row.capacity === undefined || row.capacity === '') {
+                    return '—';
+                }
+                return row.capacity_uom ? `${row.capacity} ${row.capacity_uom}` : String(row.capacity);
+            },
         },
     ];
 
@@ -353,7 +388,7 @@ export default function WorkCentersIndex({ workCenters, departments, filters }: 
                             {editingWorkCenter ? 'Edit Work Center' : 'Add Work Center'}
                         </DialogTitle>
                         <DialogDescription className="text-xs text-muted-foreground">
-                            Work centers are scoped to the active plant. Choose a department from that plant.
+                            Choose a department for this work center.
                         </DialogDescription>
                     </DialogHeader>
 
@@ -371,30 +406,19 @@ export default function WorkCentersIndex({ workCenters, departments, filters }: 
                                         <SelectValue placeholder="Select department" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        {departments.map((department) => (
-                                            <SelectItem key={department.id} value={department.id.toString()}>
-                                                {department.name}
-                                            </SelectItem>
-                                        ))}
+                                        {departments
+                                            .filter((department) => department.status === 'Active' || department.id.toString() === form.data.department_id)
+                                            .map((department) => (
+                                                <SelectItem key={department.id} value={department.id.toString()}>
+                                                    {department.name}{department.status && department.status !== 'Active' ? ' (Inactive)' : ''}
+                                                </SelectItem>
+                                            ))}
                                     </SelectContent>
                                 </Select>
                                 <InputError message={form.errors.department_id} />
                             </div>
 
-                            <div className="space-y-2">
-                                <Label htmlFor="code">
-                                    Code <span className="text-destructive">*</span>
-                                </Label>
-                                <Input
-                                    id="code"
-                                    value={form.data.code}
-                                    onChange={(e) => form.setData('code', e.target.value.toUpperCase())}
-                                    placeholder="CNC"
-                                    maxLength={20}
-                                    required
-                                />
-                                <InputError message={form.errors.code} />
-                            </div>
+
 
                             <div className="space-y-2">
                                 <Label htmlFor="name">

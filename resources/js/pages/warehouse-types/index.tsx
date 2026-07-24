@@ -248,11 +248,7 @@ export default function WarehouseTypesIndex({ warehouseTypes, statuses, filters 
                         <DialogDescription className="text-xs">Shared across all plants in the organization.</DialogDescription>
                     </DialogHeader>
                     <form onSubmit={handleSubmit} className="space-y-4">
-                        <div className="space-y-2">
-                            <Label>Code <span className="text-destructive">*</span></Label>
-                            <Input value={form.data.code} onChange={(e) => form.setData('code', e.target.value.toUpperCase())} maxLength={20} required />
-                            <InputError message={form.errors.code} />
-                        </div>
+
                         <div className="space-y-2">
                             <Label>Name <span className="text-destructive">*</span></Label>
                             <Input value={form.data.name} onChange={(e) => form.setData('name', e.target.value)} required />

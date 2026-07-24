@@ -31,13 +31,17 @@ class PlantController extends Controller
                 'required',
                 'string',
                 'max:50',
-                Rule::unique('plants')->where('organization_id', $user->organization_id),
+                Rule::unique('plants')
+                    ->where('organization_id', $user->organization_id)
+                    ->whereNull('deleted_at'),
             ],
             'slug' => [
                 'nullable',
                 'string',
                 'max:255',
-                Rule::unique('plants')->where('organization_id', $user->organization_id),
+                Rule::unique('plants')
+                    ->where('organization_id', $user->organization_id)
+                    ->whereNull('deleted_at'),
             ],
             'description' => ['nullable', 'string'],
             'address_line_1' => ['nullable', 'string', 'max:255'],
@@ -51,9 +55,9 @@ class PlantController extends Controller
             'manager_id' => [
                 'nullable',
                 'integer',
-                Rule::exists('users', 'id')
+                Rule::exists('employees', 'id')
                     ->where('organization_id', $user->organization_id)
-                    ->where('active_plant_id', $user->active_plant_id),
+                    ->whereNull('deleted_at'),
             ],
             'status' => ['required', 'string', Rule::in(['Active', 'Inactive'])],
             'is_default' => ['required', 'boolean'],
@@ -106,13 +110,19 @@ class PlantController extends Controller
                 'required',
                 'string',
                 'max:50',
-                Rule::unique('plants')->where('organization_id', $user->organization_id)->ignore($plant->id),
+                Rule::unique('plants')
+                    ->where('organization_id', $user->organization_id)
+                    ->whereNull('deleted_at')
+                    ->ignore($plant->id),
             ],
             'slug' => [
                 'nullable',
                 'string',
                 'max:255',
-                Rule::unique('plants')->where('organization_id', $user->organization_id)->ignore($plant->id),
+                Rule::unique('plants')
+                    ->where('organization_id', $user->organization_id)
+                    ->whereNull('deleted_at')
+                    ->ignore($plant->id),
             ],
             'description' => ['nullable', 'string'],
             'address_line_1' => ['nullable', 'string', 'max:255'],
@@ -126,9 +136,9 @@ class PlantController extends Controller
             'manager_id' => [
                 'nullable',
                 'integer',
-                Rule::exists('users', 'id')
+                Rule::exists('employees', 'id')
                     ->where('organization_id', $user->organization_id)
-                    ->where('active_plant_id', $user->active_plant_id),
+                    ->whereNull('deleted_at'),
             ],
             'status' => ['required', 'string', Rule::in(['Active', 'Inactive'])],
             'is_default' => ['required', 'boolean'],
@@ -171,6 +181,18 @@ class PlantController extends Controller
             ]);
 
             return redirect()->back()->withErrors(['error' => 'You cannot delete the last plant. At least one plant must exist.']);
+        }
+
+        // A plant must NEVER be deleted once it is attached or referenced anywhere in the system.
+        if ($plant->hasBlockingDependencies()) {
+            Inertia::flash('toast', [
+                'type' => 'error',
+                'message' => 'Unable to delete plant. It is referenced by warehouses, departments, employees, work centers, machines, shifts, inventory records, or routings. Deactivate it instead.',
+            ]);
+
+            return redirect()->back()->withErrors([
+                'error' => 'This plant cannot be deleted because it is referenced by other records. Deactivate the plant instead.',
+            ]);
         }
 
         $wasActive = ($user->active_plant_id === $plant->id);

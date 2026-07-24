@@ -8,8 +8,11 @@ export type Plant = {
     manager_id?: number | null;
     manager?: {
         id: number;
-        name: string;
-        email: string;
+        first_name: string;
+        last_name: string;
+        email?: string | null;
+        name?: string;
+        user?: { id: number; name: string; email: string } | null;
     } | null;
     [key: string]: unknown;
 };
@@ -40,6 +43,8 @@ export type SharedData = {
     name: string;
     auth: Auth;
     sidebarOpen: boolean;
+    needsFactorySetup?: boolean;
+    showGettingStarted?: boolean;
     [key: string]: unknown;
 };
 

@@ -2,15 +2,17 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\AutoGeneratesCode;
 use App\Models\Concerns\BelongsToActivePlant;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Warehouse extends Model
 {
-    use BelongsToActivePlant, HasFactory, SoftDeletes;
+    use AutoGeneratesCode, BelongsToActivePlant, HasFactory, SoftDeletes;
 
     public const STATUSES = [
         'Active',
@@ -78,6 +80,11 @@ class Warehouse extends Model
     public function manager(): BelongsTo
     {
         return $this->belongsTo(Employee::class, 'manager_employee_id');
+    }
+
+    public function locations(): HasMany
+    {
+        return $this->hasMany(WarehouseLocation::class)->orderBy('code');
     }
 
     public function creator(): BelongsTo

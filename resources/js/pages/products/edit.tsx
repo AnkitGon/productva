@@ -8,6 +8,7 @@ import {
     ProductForm,
     ProductRecord,
     UomOption,
+    WarehouseOption,
 } from '@/pages/products/product-form';
 
 interface Props {
@@ -16,9 +17,12 @@ interface Props {
     uoms: UomOption[];
     types: string[];
     statuses: string[];
+    warehouses: WarehouseOption[];
+    valuationMethods: string[];
+    taxClasses: string[];
 }
 
-export default function ProductsEdit({ product, categories, uoms, types, statuses }: Props) {
+export default function ProductsEdit({ product, categories, uoms, types, statuses, warehouses, valuationMethods, taxClasses }: Props) {
     return (
         <>
             <Head title={`Edit ${product.name}`} />
@@ -45,14 +49,21 @@ export default function ProductsEdit({ product, categories, uoms, types, statuse
                         uoms={uoms}
                         types={types}
                         statuses={statuses}
+                        warehouses={warehouses}
+                        valuationMethods={valuationMethods}
+                        taxClasses={taxClasses}
                         product={product}
                         submitLabel="Save Changes"
                         onCancel={() => router.visit('/products')}
-                        onSubmit={(form) => {
+                        onSubmit={(form, pending, deleteIds) => {
                             form.transform((data) => ({
                                 ...data,
                                 _method: 'put',
-                            })).post(`/products/${product.id}`, {
+                                new_attachments: pending.map((p) => p.file),
+                                new_attachment_types: pending.map((p) => p.type),
+                                delete_attachment_ids: deleteIds,
+                            }));
+                            form.post(`/products/${product.id}`, {
                                 forceFormData: true,
                             });
                         }}

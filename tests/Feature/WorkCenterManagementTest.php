@@ -32,14 +32,16 @@ beforeEach(function () {
         'is_default' => false,
     ]);
 
-    $this->department = Department::create([
+    $this->department = Department::factory()->create([
         'name' => 'Production',
+        'code' => 'PROD',
         'organization_id' => $this->org->id,
         'plant_id' => $this->plant->id,
     ]);
 
-    $this->otherDepartment = Department::create([
+    $this->otherDepartment = Department::factory()->create([
         'name' => 'Other Production',
+        'code' => 'PROD',
         'organization_id' => $this->org->id,
         'plant_id' => $this->otherPlant->id,
     ]);

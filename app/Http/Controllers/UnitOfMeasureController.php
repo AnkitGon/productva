@@ -22,7 +22,9 @@ class UnitOfMeasureController extends Controller
         $perPage = (int) $request->get('per_page', 10);
         $perPage = in_array($perPage, [10, 25, 50, 100], true) ? $perPage : 10;
 
-        $query = UnitOfMeasure::query()->forOrganization($user);
+        $query = UnitOfMeasure::query()
+            ->forOrganization($user)
+            ->withCount('products');
 
         if ($request->filled('search')) {
             $search = $request->search;
@@ -99,6 +101,10 @@ class UnitOfMeasureController extends Controller
 
         $validated = $this->validateUnitOfMeasure($request, $user, $unitOfMeasure);
 
+        if (empty($validated['code'])) {
+            unset($validated['code']);
+        }
+
         $unitOfMeasure->update($validated);
 
         Inertia::flash('toast', [
@@ -144,7 +150,8 @@ class UnitOfMeasureController extends Controller
     private function validateUnitOfMeasure(Request $request, $user, ?UnitOfMeasure $unitOfMeasure = null): array
     {
         $request->merge([
-            'code' => strtoupper(trim((string) $request->input('code', ''))),
+            'code' => $request->filled('code') ? strtoupper(trim((string) $request->input('code'))) : null,
+            'name' => trim((string) $request->input('name', '')),
             'symbol' => trim((string) $request->input('symbol', '')),
             'description' => $request->filled('description') ? $request->input('description') : null,
         ]);
@@ -154,18 +161,26 @@ class UnitOfMeasureController extends Controller
                 ->where('organization_id', $user->organization_id)
                 ->whereNull('deleted_at'));
 
+        $uniqueName = Rule::unique('units_of_measure', 'name')
+            ->where(fn ($query) => $query
+                ->where('organization_id', $user->organization_id)
+                ->whereNull('deleted_at'));
+
         if ($unitOfMeasure) {
             $uniqueCode->ignore($unitOfMeasure->id);
+            $uniqueName->ignore($unitOfMeasure->id);
         }
 
         return $request->validate([
-            'code' => ['required', 'string', 'max:20', $uniqueCode],
-            'name' => ['required', 'string', 'max:100'],
+            'code' => ['nullable', 'string', 'max:20', $uniqueCode],
+            'name' => ['required', 'string', 'max:100', $uniqueName],
             'symbol' => ['required', 'string', 'max:20'],
             'type' => ['required', Rule::in(UnitOfMeasure::TYPES)],
             'decimal_places' => ['required', 'integer', 'min:0', 'max:6'],
             'status' => ['required', Rule::in(UnitOfMeasure::STATUSES)],
             'description' => ['nullable', 'string', 'max:5000'],
+        ], [
+            'name.unique' => 'A unit of measure with this name already exists.',
         ]);
     }
 

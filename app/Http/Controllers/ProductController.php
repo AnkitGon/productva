@@ -3,9 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Models\Product;
+use App\Models\ProductAttachment;
 use App\Models\ProductCategory;
 use App\Models\UnitOfMeasure;
+use App\Models\Warehouse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -56,16 +59,24 @@ class ProductController extends Controller
             $query->where('category_id', $request->category_id);
         }
 
+        if ($request->filled('uom_id')) {
+            $query->where('uom_id', $request->uom_id);
+        }
+
         if ($request->has('track_inventory') && $request->input('track_inventory') !== '' && $request->input('track_inventory') !== 'all') {
             $query->where('track_inventory', $request->boolean('track_inventory'));
         }
 
-        if ($request->has('lot_tracking') && $request->input('lot_tracking') !== '' && $request->input('lot_tracking') !== 'all') {
-            $query->where('lot_tracking', $request->boolean('lot_tracking'));
+        if ($request->filled('default_warehouse_id')) {
+            $query->where('default_warehouse_id', $request->default_warehouse_id);
         }
 
-        if ($request->has('serial_tracking') && $request->input('serial_tracking') !== '' && $request->input('serial_tracking') !== 'all') {
-            $query->where('serial_tracking', $request->boolean('serial_tracking'));
+        if ($request->filled('manufacturer')) {
+            $query->where('manufacturer', $request->manufacturer);
+        }
+
+        if ($request->filled('brand')) {
+            $query->where('brand', $request->brand);
         }
 
         if ($request->filled('preferred_supplier_id')) {
@@ -83,9 +94,40 @@ class ProductController extends Controller
             ->orderBy('name')
             ->get(['id', 'code', 'name', 'status']);
 
+        $warehouses = Warehouse::query()
+            ->where('organization_id', $user->organization_id)
+            ->whereNull('deleted_at')
+            ->orderBy('name')
+            ->get(['id', 'code', 'name', 'status']);
+
+        $manufacturers = Product::query()
+            ->forOrganization($user)
+            ->whereNotNull('manufacturer')
+            ->where('manufacturer', '!=', '')
+            ->distinct()
+            ->orderBy('manufacturer')
+            ->pluck('manufacturer');
+
+        $brands = Product::query()
+            ->forOrganization($user)
+            ->whereNotNull('brand')
+            ->where('brand', '!=', '')
+            ->distinct()
+            ->orderBy('brand')
+            ->pluck('brand');
+
+        $uoms = UnitOfMeasure::query()
+            ->forOrganization($user)
+            ->orderBy('code')
+            ->get(['id', 'code', 'name']);
+
         return Inertia::render('products/index', [
             'products' => $query->paginate($perPage)->withQueryString(),
             'categories' => $categories,
+            'warehouses' => $warehouses,
+            'manufacturers' => $manufacturers,
+            'brands' => $brands,
+            'uoms' => $uoms,
             'types' => Product::TYPES,
             'statuses' => Product::STATUSES,
             'filters' => $request->only([
@@ -93,9 +135,11 @@ class ProductController extends Controller
                 'status',
                 'type',
                 'category_id',
+                'uom_id',
                 'track_inventory',
-                'lot_tracking',
-                'serial_tracking',
+                'default_warehouse_id',
+                'manufacturer',
+                'brand',
                 'preferred_supplier_id',
                 'sort_by',
                 'sort_dir',
@@ -130,13 +174,15 @@ class ProductController extends Controller
         $validated = $this->validateProduct($request, $user);
         $paths = $this->storeMediaFiles($request);
 
-        Product::create([
+        $product = Product::create([
             ...$validated,
             ...$paths,
             'organization_id' => $user->organization_id,
             'created_by' => $user->id,
             'updated_by' => $user->id,
         ]);
+
+        $this->storeNewAttachments($request, $product, $user);
 
         Inertia::flash('toast', [
             'type' => 'success',
@@ -162,6 +208,7 @@ class ProductController extends Controller
             'purchaseUom:id,code,name,symbol,status',
             'creator:id,name',
             'updater:id,name',
+            'attachments',
         ]);
 
         return Inertia::render('products/show', [
@@ -179,7 +226,12 @@ class ProductController extends Controller
             abort(403);
         }
 
-        $product->load(['category:id,code,name,status', 'uom:id,code,name,symbol,status', 'purchaseUom:id,code,name,symbol,status']);
+        $product->load([
+            'category:id,code,name,status',
+            'uom:id,code,name,symbol,status',
+            'purchaseUom:id,code,name,symbol,status',
+            'attachments',
+        ]);
 
         return Inertia::render('products/edit', [
             'product' => $product,
@@ -206,12 +258,49 @@ class ProductController extends Controller
             'updated_by' => $user->id,
         ]);
 
+        // Delete individually removed attachments
+        $deleteIds = array_filter(array_map('intval', (array) $request->input('delete_attachment_ids', [])));
+        if ($deleteIds !== []) {
+            $attachments = $product->attachments()->whereIn('id', $deleteIds)->get();
+            foreach ($attachments as $attachment) {
+                Storage::disk('public')->delete($attachment->file_path);
+                $attachment->delete();
+            }
+        }
+
+        $this->storeNewAttachments($request, $product, $user);
+
         Inertia::flash('toast', [
             'type' => 'success',
             'message' => 'Product updated successfully.',
         ]);
 
         return redirect()->route('products.index');
+    }
+
+    /**
+     * Delete a single product attachment.
+     */
+    public function destroyAttachment(Request $request, Product $product, ProductAttachment $attachment)
+    {
+        $user = $request->user();
+        if (! $user || ! $this->belongsToOrganization($user, $product)) {
+            abort(403);
+        }
+
+        if ((int) $attachment->product_id !== (int) $product->id) {
+            abort(404);
+        }
+
+        Storage::disk('public')->delete($attachment->file_path);
+        $attachment->delete();
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Attachment removed.',
+        ]);
+
+        return redirect()->back();
     }
 
     /**
@@ -455,7 +544,213 @@ class ProductController extends Controller
     }
 
     /**
-     * @return array{categories: mixed, uoms: mixed, types: list<string>, statuses: list<string>}
+     * Perform a bulk action on selected products.
+     */
+    public function bulk(Request $request)
+    {
+        $user = $request->user();
+        if (! $user || ! $user->organization_id) {
+            abort(403);
+        }
+
+        $validated = $request->validate([
+            'action' => ['required', Rule::in(['activate', 'deactivate', 'assign_category', 'assign_warehouse', 'export', 'delete'])],
+            'ids' => ['required', 'array', 'min:1'],
+            'ids.*' => ['integer'],
+            'category_id' => [
+                'required_if:action,assign_category',
+                'nullable',
+                'integer',
+                Rule::exists('product_categories', 'id')
+                    ->where('organization_id', $user->organization_id)
+                    ->where('status', 'Active')
+                    ->whereNull('deleted_at'),
+            ],
+            'default_warehouse_id' => [
+                'required_if:action,assign_warehouse',
+                'nullable',
+                'integer',
+                Rule::exists('warehouses', 'id')
+                    ->where('organization_id', $user->organization_id)
+                    ->whereNull('deleted_at'),
+            ],
+        ]);
+
+        $permission = match ($validated['action']) {
+            'activate', 'deactivate', 'assign_category', 'assign_warehouse' => 'products.update',
+            'export' => 'products.export',
+            'delete' => 'products.delete',
+        };
+
+        if (! $user->hasPermission($permission)) {
+            abort(403);
+        }
+
+        $products = Product::query()
+            ->forOrganization($user)
+            ->whereIn('id', $validated['ids'])
+            ->get();
+
+        if ($products->isEmpty()) {
+            Inertia::flash('toast', [
+                'type' => 'error',
+                'message' => 'No matching products found for this organization.',
+            ]);
+
+            return redirect()->back();
+        }
+
+        return match ($validated['action']) {
+            'activate' => $this->bulkUpdateStatus($products, 'Active', 'Products activated successfully.'),
+            'deactivate' => $this->bulkUpdateStatus($products, 'Inactive', 'Products deactivated successfully.'),
+            'assign_category' => $this->bulkAssignCategory($products, (int) $validated['category_id']),
+            'assign_warehouse' => $this->bulkAssignWarehouse($products, (int) $validated['default_warehouse_id']),
+            'export' => $this->bulkExport($products),
+            'delete' => $this->bulkDelete($products, $user),
+        };
+    }
+
+    /**
+     * @param  Collection<int, Product>  $products
+     */
+    private function bulkUpdateStatus($products, string $status, string $message)
+    {
+        Product::query()
+            ->whereIn('id', $products->pluck('id'))
+            ->update(['status' => $status]);
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => $message,
+        ]);
+
+        return redirect()->back();
+    }
+
+    /**
+     * @param  Collection<int, Product>  $products
+     */
+    private function bulkAssignCategory($products, int $categoryId)
+    {
+        Product::query()
+            ->whereIn('id', $products->pluck('id'))
+            ->update(['category_id' => $categoryId]);
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Category assigned to selected products.',
+        ]);
+
+        return redirect()->back();
+    }
+
+    /**
+     * @param  Collection<int, Product>  $products
+     */
+    private function bulkAssignWarehouse($products, int $warehouseId)
+    {
+        Product::query()
+            ->whereIn('id', $products->pluck('id'))
+            ->update(['default_warehouse_id' => $warehouseId]);
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Warehouse assigned to selected products.',
+        ]);
+
+        return redirect()->back();
+    }
+
+    /**
+     * @param  Collection<int, Product>  $products
+     */
+    private function bulkDelete($products, $user)
+    {
+        $archived = 0;
+        $deactivated = 0;
+
+        foreach ($products as $product) {
+            if ($product->hasBlockingDependencies()) {
+                $product->update([
+                    'status' => 'Inactive',
+                    'updated_by' => $user->id,
+                ]);
+                $deactivated++;
+
+                continue;
+            }
+
+            $product->delete();
+            $archived++;
+        }
+
+        $message = match (true) {
+            $archived > 0 && $deactivated > 0 => "{$archived} product(s) archived, {$deactivated} marked Inactive due to inventory or history.",
+            $deactivated > 0 => "{$deactivated} product(s) marked Inactive due to inventory or history.",
+            default => 'Selected products archived successfully.',
+        };
+
+        Inertia::flash('toast', [
+            'type' => $deactivated > 0 && $archived === 0 ? 'warning' : 'success',
+            'message' => $message,
+        ]);
+
+        return redirect()->back();
+    }
+
+    /**
+     * @param  Collection<int, Product>  $products
+     */
+    private function bulkExport($products): StreamedResponse
+    {
+        $products->loadMissing(['category:id,code,name', 'uom:id,code,name', 'defaultWarehouse:id,code,name']);
+
+        $filename = 'products-selected-'.now()->format('Y-m-d-His').'.csv';
+        $headers = [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+        ];
+
+        $callback = function () use ($products) {
+            $handle = fopen('php://output', 'w');
+            fputcsv($handle, [
+                'sku',
+                'name',
+                'type',
+                'status',
+                'category',
+                'uom',
+                'warehouse',
+                'brand',
+                'manufacturer',
+                'opening_stock',
+                'opening_cost',
+            ]);
+
+            foreach ($products as $product) {
+                fputcsv($handle, [
+                    $product->sku,
+                    $product->name,
+                    $product->type,
+                    $product->status,
+                    $product->category?->name,
+                    $product->uom?->code,
+                    $product->defaultWarehouse?->code,
+                    $product->brand,
+                    $product->manufacturer,
+                    $product->opening_stock,
+                    $product->opening_cost,
+                ]);
+            }
+
+            fclose($handle);
+        };
+
+        return response()->stream($callback, 200, $headers);
+    }
+
+    /**
+     * @return array{categories: mixed, uoms: mixed, types: list<string>, statuses: list<string>, warehouses: mixed, valuationMethods: list<string>, taxClasses: list<string>}
      */
     private function formOptions($user, ?Product $product = null): array
     {
@@ -477,17 +772,28 @@ class ProductController extends Controller
                 $query->where('status', 'Active');
                 if ($product) {
                     $query->orWhere('id', $product->uom_id)
-                        ->orWhere('id', $product->purchase_uom_id);
+                        ->orWhere('id', $product->purchase_uom_id)
+                        ->orWhere('id', $product->sales_uom_id)
+                        ->orWhere('id', $product->manufacturing_uom_id);
                 }
             })
             ->orderBy('code')
             ->get(['id', 'code', 'name', 'symbol', 'status']);
+
+        $warehouses = Warehouse::query()
+            ->where('organization_id', $user->organization_id)
+            ->where('status', 'Active')
+            ->orderBy('name')
+            ->get(['id', 'code', 'name']);
 
         return [
             'categories' => $categories,
             'uoms' => $uoms,
             'types' => Product::TYPES,
             'statuses' => Product::STATUSES,
+            'warehouses' => $warehouses,
+            'valuationMethods' => Product::VALUATION_METHODS,
+            'taxClasses' => Product::TAX_CLASSES,
         ];
     }
 
@@ -509,16 +815,32 @@ class ProductController extends Controller
             'supplier_sku' => $request->filled('supplier_sku') ? $request->input('supplier_sku') : null,
             'preferred_supplier_id' => $request->filled('preferred_supplier_id') ? $request->input('preferred_supplier_id') : null,
             'purchase_uom_id' => $request->filled('purchase_uom_id') ? $request->input('purchase_uom_id') : null,
+            'sales_uom_id' => $request->filled('sales_uom_id') ? $request->input('sales_uom_id') : null,
+            'manufacturing_uom_id' => $request->filled('manufacturing_uom_id') ? $request->input('manufacturing_uom_id') : null,
+            'default_warehouse_id' => $request->filled('default_warehouse_id') ? $request->input('default_warehouse_id') : null,
+            'opening_stock' => $request->filled('opening_stock') ? $request->input('opening_stock') : null,
+            'opening_cost' => $request->filled('opening_cost') ? $request->input('opening_cost') : null,
             'dimensions' => $request->filled('dimensions') ? $request->input('dimensions') : null,
             'reorder_level' => $request->filled('reorder_level') ? $request->input('reorder_level') : null,
             'minimum_stock' => $request->filled('minimum_stock') ? $request->input('minimum_stock') : null,
             'maximum_stock' => $request->filled('maximum_stock') ? $request->input('maximum_stock') : null,
             'safety_stock' => $request->filled('safety_stock') ? $request->input('safety_stock') : null,
+            'economic_order_quantity' => $request->filled('economic_order_quantity') ? $request->input('economic_order_quantity') : null,
             'lead_time_days' => $request->filled('lead_time_days') ? $request->input('lead_time_days') : null,
+            'shelf_life_days' => $request->filled('shelf_life_days') ? $request->input('shelf_life_days') : null,
             'purchase_price' => $request->filled('purchase_price') ? $request->input('purchase_price') : null,
             'selling_price' => $request->filled('selling_price') ? $request->input('selling_price') : null,
+            'default_discount' => $request->filled('default_discount') ? $request->input('default_discount') : null,
             'tax_rate' => $request->filled('tax_rate') ? $request->input('tax_rate') : null,
+            'tax_class' => $request->filled('tax_class') && $request->input('tax_class') !== 'None' ? $request->input('tax_class') : null,
+            'hsn_sac_code' => $request->filled('hsn_sac_code') ? $request->input('hsn_sac_code') : null,
             'weight' => $request->filled('weight') ? $request->input('weight') : null,
+            'brand' => $request->filled('brand') ? $request->input('brand') : null,
+            'manufacturer' => $request->filled('manufacturer') ? $request->input('manufacturer') : null,
+            'country_of_origin' => $request->filled('country_of_origin') ? $request->input('country_of_origin') : null,
+            'abc_classification' => $request->filled('abc_classification') ? $request->input('abc_classification') : null,
+            'xyz_classification' => $request->filled('xyz_classification') ? $request->input('xyz_classification') : null,
+            'notes' => $request->filled('notes') ? $request->input('notes') : null,
         ]);
 
         $uniqueSku = Rule::unique('products', 'sku')
@@ -560,6 +882,10 @@ class ProductController extends Controller
             }
         }
 
+        $uomExistsRule = Rule::exists('units_of_measure', 'id')
+            ->where('organization_id', $user->organization_id)
+            ->whereNull('deleted_at');
+
         $validated = $request->validate([
             'sku' => ['required', 'string', 'max:50', $uniqueSku],
             'barcode' => ['nullable', 'string', 'max:100', $uniqueBarcode],
@@ -569,34 +895,52 @@ class ProductController extends Controller
             'uom_id' => ['required', 'integer', $activeUom],
             'type' => ['required', Rule::in(Product::TYPES)],
             'status' => ['required', Rule::in(Product::STATUSES)],
+            // Inventory
             'track_inventory' => ['sometimes', 'boolean'],
             'allow_negative_stock' => ['sometimes', 'boolean'],
             'reorder_level' => ['nullable', 'numeric', 'min:0'],
             'minimum_stock' => ['nullable', 'numeric', 'min:0'],
             'maximum_stock' => ['nullable', 'numeric', 'min:0'],
             'safety_stock' => ['nullable', 'numeric', 'min:0'],
+            'economic_order_quantity' => ['nullable', 'numeric', 'min:0'],
             'lead_time_days' => ['nullable', 'integer', 'min:0', 'max:3650'],
+            'inventory_valuation_method' => ['sometimes', 'string', Rule::in(Product::VALUATION_METHODS)],
+            'default_warehouse_id' => [
+                'nullable',
+                'integer',
+                Rule::exists('warehouses', 'id')
+                    ->where('organization_id', $user->organization_id)
+                    ->whereNull('deleted_at'),
+            ],
+            'opening_stock' => ['nullable', 'numeric', 'min:0'],
+            'opening_cost' => ['nullable', 'numeric', 'min:0'],
+            // Manufacturing
             'make_to_stock' => ['sometimes', 'boolean'],
             'make_to_order' => ['sometimes', 'boolean'],
             'bom_required' => ['sometimes', 'boolean'],
             'routing_required' => ['sometimes', 'boolean'],
+            'backflush_material' => ['sometimes', 'boolean'],
+            'manufacturing_uom_id' => ['nullable', 'integer', $uomExistsRule],
+            // Traceability
             'lot_tracking' => ['sometimes', 'boolean'],
             'serial_tracking' => ['sometimes', 'boolean'],
             'expiry_tracking' => ['sometimes', 'boolean'],
+            'shelf_life_days' => ['nullable', 'integer', 'min:0', 'max:36500'],
+            // Purchasing
             'preferred_supplier_id' => ['nullable', 'integer'],
             'supplier_sku' => ['nullable', 'string', 'max:100'],
-            'purchase_uom_id' => [
-                'nullable',
-                'integer',
-                Rule::exists('units_of_measure', 'id')
-                    ->where('organization_id', $user->organization_id)
-                    ->whereNull('deleted_at'),
-            ],
+            'purchase_uom_id' => ['nullable', 'integer', $uomExistsRule],
             'purchase_price' => ['nullable', 'numeric', 'min:0'],
+            // Sales
             'selling_price' => ['nullable', 'numeric', 'min:0'],
+            'sales_uom_id' => ['nullable', 'integer', $uomExistsRule],
+            'tax_class' => ['nullable', 'string', 'max:50'],
+            'hsn_sac_code' => ['nullable', 'string', 'max:30'],
+            'default_discount' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'tax_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'weight' => ['nullable', 'numeric', 'min:0'],
             'dimensions' => ['nullable', 'string', 'max:100'],
+            // Media
             'image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
             'datasheet' => ['nullable', 'file', 'mimes:pdf', 'max:10240'],
             'safety_sheet' => ['nullable', 'file', 'mimes:pdf', 'max:10240'],
@@ -605,6 +949,13 @@ class ProductController extends Controller
             'remove_datasheet' => ['sometimes', 'boolean'],
             'remove_safety_sheet' => ['sometimes', 'boolean'],
             'remove_technical_drawing' => ['sometimes', 'boolean'],
+            // Additional
+            'brand' => ['nullable', 'string', 'max:100'],
+            'manufacturer' => ['nullable', 'string', 'max:150'],
+            'country_of_origin' => ['nullable', 'string', 'max:100'],
+            'abc_classification' => ['nullable', 'string', Rule::in(Product::ABC_CLASSES)],
+            'xyz_classification' => ['nullable', 'string', Rule::in(Product::XYZ_CLASSES)],
+            'notes' => ['nullable', 'string', 'max:10000'],
         ]);
 
         $lotTracking = (bool) ($validated['lot_tracking'] ?? $product?->lot_tracking ?? false);
@@ -620,6 +971,18 @@ class ProductController extends Controller
             $validated[$field] = (bool) ($validated[$field] ?? false);
         }
 
+        if (! $validated['track_inventory']) {
+            $validated['allow_negative_stock'] = false;
+            $validated['default_warehouse_id'] = null;
+            $validated['opening_stock'] = 0;
+            $validated['opening_cost'] = 0;
+        }
+
+        $stockErrors = $this->stockLevelValidationErrors($validated);
+        if ($stockErrors !== []) {
+            throw ValidationException::withMessages($stockErrors);
+        }
+
         unset(
             $validated['image'],
             $validated['datasheet'],
@@ -632,6 +995,43 @@ class ProductController extends Controller
         );
 
         return $validated;
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     * @return array<string, string>
+     */
+    private function stockLevelValidationErrors(array $validated): array
+    {
+        $maximum = $this->nullableFloat($validated['maximum_stock'] ?? null);
+        $minimum = $this->nullableFloat($validated['minimum_stock'] ?? null);
+        $safety = $this->nullableFloat($validated['safety_stock'] ?? null);
+        $reorder = $this->nullableFloat($validated['reorder_level'] ?? null);
+
+        $errors = [];
+
+        if ($maximum !== null && $minimum !== null && $maximum < $minimum) {
+            $errors['maximum_stock'] = 'Maximum stock must be greater than or equal to minimum stock.';
+        }
+
+        if ($minimum !== null && $safety !== null && $minimum < $safety) {
+            $errors['minimum_stock'] = 'Minimum stock must be greater than or equal to safety stock.';
+        }
+
+        if ($safety !== null && $reorder !== null && $safety > $reorder) {
+            $errors['safety_stock'] = 'Safety stock must be less than or equal to reorder point.';
+        }
+
+        return $errors;
+    }
+
+    private function nullableFloat(mixed $value): ?float
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return (float) $value;
     }
 
     /**
@@ -703,5 +1103,43 @@ class ProductController extends Controller
     private function belongsToOrganization($user, Product $product): bool
     {
         return (int) $product->organization_id === (int) $user->organization_id;
+    }
+
+    /**
+     * Store newly uploaded attachments from the multi-upload array.
+     */
+    private function storeNewAttachments(Request $request, Product $product, $user): void
+    {
+        $files = $request->file('new_attachments', []);
+        $types = (array) $request->input('new_attachment_types', []);
+
+        if (empty($files)) {
+            return;
+        }
+
+        foreach ($files as $index => $file) {
+            if (! $file || ! $file->isValid()) {
+                continue;
+            }
+
+            $type = $types[$index] ?? 'other';
+            if (! in_array($type, ProductAttachment::TYPES, true)) {
+                $type = 'other';
+            }
+
+            $path = $file->store('product-attachments', 'public');
+
+            ProductAttachment::create([
+                'product_id' => $product->id,
+                'organization_id' => $product->organization_id,
+                'original_name' => $file->getClientOriginalName(),
+                'file_path' => $path,
+                'mime_type' => $file->getMimeType(),
+                'file_size' => $file->getSize(),
+                'type' => $type,
+                'sort_order' => $index,
+                'created_by' => $user->id,
+            ]);
+        }
     }
 }

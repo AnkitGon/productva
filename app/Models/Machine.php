@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\AutoGeneratesCode;
 use App\Models\Concerns\BelongsToActivePlant;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -10,7 +11,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Machine extends Model
 {
-    use BelongsToActivePlant, HasFactory, SoftDeletes;
+    use AutoGeneratesCode, BelongsToActivePlant, HasFactory, SoftDeletes;
 
     public const STATUSES = [
         'Active',

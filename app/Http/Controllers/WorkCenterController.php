@@ -26,7 +26,7 @@ class WorkCenterController extends Controller
         $query = WorkCenter::query()
             ->forActivePlant($user)
             ->with([
-                'department:id,name',
+                'department:id,name,code',
                 'supervisor:id,first_name,last_name,display_name,employee_code,user_id',
                 'supervisor.user:id,name,email',
             ])
@@ -57,7 +57,7 @@ class WorkCenterController extends Controller
         $departments = Department::query()
             ->forActivePlant($user)
             ->orderBy('name')
-            ->get(['id', 'name']);
+            ->get(['id', 'name', 'code', 'status']);
 
         return Inertia::render('work-centers/index', [
             'workCenters' => $query->paginate($perPage)->withQueryString(),
@@ -106,10 +106,15 @@ class WorkCenterController extends Controller
 
         $validated = $this->validateWorkCenter($request, $user, $workCenter);
 
-        $workCenter->update([
+        $updateData = [
             ...$validated,
             'updated_by' => $user->id,
-        ]);
+        ];
+        if (empty($updateData['code'])) {
+            unset($updateData['code']);
+        }
+
+        $workCenter->update($updateData);
 
         Inertia::flash('toast', [
             'type' => 'success',
@@ -154,7 +159,7 @@ class WorkCenterController extends Controller
     private function validateWorkCenter(Request $request, $user, ?WorkCenter $workCenter = null): array
     {
         $request->merge([
-            'code' => strtoupper(trim((string) $request->input('code', ''))),
+            'code' => $request->filled('code') ? strtoupper(trim((string) $request->input('code'))) : null,
             'supervisor_employee_id' => $request->filled('supervisor_employee_id')
                 ? $request->input('supervisor_employee_id')
                 : null,
@@ -180,7 +185,7 @@ class WorkCenterController extends Controller
                     ->where('organization_id', $user->organization_id)
                     ->where('plant_id', $user->active_plant_id),
             ],
-            'code' => ['required', 'string', 'max:20', $uniqueCode],
+            'code' => ['nullable', 'string', 'max:20', $uniqueCode],
             'name' => ['required', 'string', 'max:100'],
             'description' => ['nullable', 'string', 'max:5000'],
             'supervisor_employee_id' => [
@@ -189,6 +194,7 @@ class WorkCenterController extends Controller
                 Rule::exists('employees', 'id')
                     ->where('organization_id', $user->organization_id)
                     ->where('plant_id', $user->active_plant_id)
+                    ->where('status', 'Active')
                     ->whereNull('deleted_at'),
             ],
             'capacity' => ['nullable', 'numeric', 'min:0'],

@@ -1,6 +1,6 @@
-import { Head, useForm } from '@inertiajs/react';
+import { Head, Link, router, useForm } from '@inertiajs/react';
 import React, { useState } from 'react';
-import { Plus, Building2, Edit2, Trash2 } from 'lucide-react';
+import { Plus, Building2, Edit2, Eye, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -12,17 +12,43 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import InputError from '@/components/input-error';
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import { ModalButtons } from '@/components/modal-buttons';
 import { DataTable, type ColumnDef, type TableMeta } from '@/components/data-table/data-table';
+import { StatusBadge } from '@/components/data-table/status-badge';
+import { UserSearchSelect } from '@/components/user-search-select';
 import { useCan } from '@/hooks/use-can';
 import type { RowAction } from '@/components/data-table/data-table-row-actions';
+
+interface DepartmentManager {
+    id: number;
+    name: string;
+    email: string;
+}
 
 interface Department {
     id: number;
     name: string;
+    code: string;
+    description: string | null;
+    status: string;
+    manager_id: number | null;
+    manager?: DepartmentManager | null;
     employees_count?: number;
+    work_centers_count?: number;
+}
+
+interface DepartmentReports {
+    active: number;
+    inactive: number;
 }
 
 interface PaginatedDepartments {
@@ -37,27 +63,93 @@ interface PaginatedDepartments {
 
 interface Props {
     departments: PaginatedDepartments;
+    statuses: string[];
+    reports: DepartmentReports;
     filters: Record<string, string>;
 }
 
-export default function DepartmentsIndex({ departments, filters }: Props) {
+type DepartmentFormData = {
+    name: string;
+    code: string;
+    description: string;
+    status: string;
+    manager_id: string;
+};
+
+const emptyForm = (): DepartmentFormData => ({
+    name: '',
+    code: '',
+    description: '',
+    status: 'Active',
+    manager_id: '',
+});
+
+function isInUse(row: Department): boolean {
+    return (row.employees_count ?? 0) > 0 || (row.work_centers_count ?? 0) > 0;
+}
+
+function ReportCard({
+    label,
+    value,
+    onClick,
+    active,
+}: {
+    label: string;
+    value: number;
+    onClick?: () => void;
+    active?: boolean;
+}) {
+    const className = `rounded-xl border bg-card p-4 shadow-sm text-left transition-colors ${
+        active ? 'border-primary/50 ring-1 ring-primary/20' : 'border-border/50'
+    } ${onClick ? 'hover:border-primary/40 hover:bg-accent/30 cursor-pointer' : ''}`;
+
+    if (onClick) {
+        return (
+            <button type="button" onClick={onClick} className={className}>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+                <p className="mt-2 text-2xl font-bold tracking-tight text-foreground">{value}</p>
+            </button>
+        );
+    }
+
+    return (
+        <div className={className}>
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+            <p className="mt-2 text-2xl font-bold tracking-tight text-foreground">{value}</p>
+        </div>
+    );
+}
+
+export default function DepartmentsIndex({ departments, statuses, reports, filters }: Props) {
     const { can } = useCan();
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [editingDept, setEditingDept] = useState<Department | null>(null);
     const [deleteConfirmDept, setDeleteConfirmDept] = useState<Department | null>(null);
+    const [managerLabel, setManagerLabel] = useState('');
 
-    const { data, setData, post, put, delete: destroy, processing, errors, reset, clearErrors } = useForm({ name: '' });
+    const { data, setData, post, put, delete: destroy, processing, errors, reset, clearErrors } = useForm(emptyForm());
 
     const handleCreateClick = () => {
         setEditingDept(null);
-        setData('name', '');
+        reset();
+        setData(emptyForm());
+        setManagerLabel('');
         clearErrors();
         setIsDialogOpen(true);
     };
 
     const handleEditClick = (dept: Department) => {
         setEditingDept(dept);
-        setData('name', dept.name);
+        setData({
+            name: dept.name,
+            code: dept.code,
+            description: dept.description ?? '',
+            status: dept.status,
+            manager_id: dept.manager_id ? String(dept.manager_id) : '',
+        });
+        setManagerLabel(
+            dept.manager ? `${dept.manager.name} (${dept.manager.email})` : '',
+        );
         clearErrors();
         setIsDialogOpen(true);
     };
@@ -65,7 +157,11 @@ export default function DepartmentsIndex({ departments, filters }: Props) {
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         const config = {
-            onSuccess: () => { setIsDialogOpen(false); reset(); },
+            onSuccess: () => {
+                setIsDialogOpen(false);
+                reset();
+                setManagerLabel('');
+            },
         };
         if (editingDept) {
             put(`/departments/${editingDept.id}`, config);
@@ -81,15 +177,48 @@ export default function DepartmentsIndex({ departments, filters }: Props) {
         });
     };
 
-    // ── Column Definitions ───────────────────────────────────────────────────
+    const currentParams: Record<string, string> = {};
+    Object.entries(filters ?? {}).forEach(([k, v]) => {
+        if (v) currentParams[k] = v;
+    });
+
+    const makeFilterChange = (key: string, val: string) => {
+        const params = { ...currentParams };
+        if (val !== 'all') {
+            params[key] = val;
+        } else {
+            delete params[key];
+        }
+        delete params.page;
+        router.get('/departments', params, { preserveState: true, replace: true });
+    };
+
     const columns: ColumnDef<Department>[] = [
         {
             key: 'name',
-            label: 'Department Name',
+            label: 'Department',
             sortable: true,
             render: (row) => (
-                <span className="font-semibold text-foreground">{row.name}</span>
+                <Link
+                    href={`/departments/${row.id}`}
+                    className="font-semibold text-foreground hover:underline hover:text-primary transition-colors"
+                >
+                    {row.name}
+                </Link>
             ),
+        },
+        {
+            key: 'code',
+            label: 'Code',
+            sortable: true,
+            render: (row) => <span className="font-mono text-sm font-semibold">{row.code}</span>,
+        },
+        {
+            key: 'manager',
+            label: 'Manager',
+            sortable: false,
+            className: 'text-muted-foreground',
+            render: (row) => row.manager?.name ?? '—',
         },
         {
             key: 'employees_count',
@@ -98,8 +227,53 @@ export default function DepartmentsIndex({ departments, filters }: Props) {
             className: 'text-muted-foreground',
             render: (row) => {
                 const count = row.employees_count ?? 0;
-                return `${count} ${count === 1 ? 'employee' : 'employees'}`;
+                const label = `${count} ${count === 1 ? 'employee' : 'employees'}`;
+                if (!can('employees.view')) {
+                    return label;
+                }
+                return (
+                    <Link
+                        href={`/employees?department_id=${row.id}`}
+                        className="hover:underline hover:text-primary transition-colors"
+                    >
+                        {label}
+                    </Link>
+                );
             },
+        },
+        {
+            key: 'work_centers_count',
+            label: 'Work Centers',
+            sortable: true,
+            className: 'text-muted-foreground',
+            render: (row) => {
+                const count = row.work_centers_count ?? 0;
+                const label = `${count} ${count === 1 ? 'work center' : 'work centers'}`;
+                if (!can('work-centers.view')) {
+                    return label;
+                }
+                return (
+                    <Link
+                        href={`/work-centers?department_id=${row.id}`}
+                        className="hover:underline hover:text-primary transition-colors"
+                    >
+                        {label}
+                    </Link>
+                );
+            },
+        },
+        {
+            key: 'status',
+            label: 'Status',
+            sortable: true,
+            render: (row) => <StatusBadge status={row.status} />,
+        },
+        {
+            key: 'description',
+            label: 'Description',
+            defaultVisible: false,
+            className: 'text-muted-foreground',
+            render: (row) => row.description ?? '—',
         },
     ];
 
@@ -112,16 +286,24 @@ export default function DepartmentsIndex({ departments, filters }: Props) {
         to: departments.to ?? departments.data.length,
     };
 
-    // Normalise filters to string map for DataTable
-    const currentParams: Record<string, string> = {};
-    Object.entries(filters ?? {}).forEach(([k, v]) => { if (v) currentParams[k] = v; });
+    const filterSlot = (
+        <Select value={currentParams.status ?? 'all'} onValueChange={(v) => makeFilterChange('status', v)}>
+            <SelectTrigger className="h-8 text-xs min-w-[110px] border-dashed">
+                <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+                <SelectItem value="all">All Statuses</SelectItem>
+                <SelectItem value="Active">Active</SelectItem>
+                <SelectItem value="Inactive">Inactive</SelectItem>
+            </SelectContent>
+        </Select>
+    );
 
     return (
         <>
             <Head title="Departments" />
 
             <div className="flex flex-col gap-6 p-6">
-                {/* Page header */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div>
                         <h1 className="text-2xl font-bold tracking-tight">Departments</h1>
@@ -129,7 +311,21 @@ export default function DepartmentsIndex({ departments, filters }: Props) {
                     </div>
                 </div>
 
-                {/* DataTable */}
+                <div className="grid grid-cols-2 gap-4 max-w-xl">
+                    <ReportCard
+                        label="Active Departments"
+                        value={reports.active}
+                        active={currentParams.status === 'Active'}
+                        onClick={() => makeFilterChange('status', currentParams.status === 'Active' ? 'all' : 'Active')}
+                    />
+                    <ReportCard
+                        label="Inactive Departments"
+                        value={reports.inactive}
+                        active={currentParams.status === 'Inactive'}
+                        onClick={() => makeFilterChange('status', currentParams.status === 'Inactive' ? 'all' : 'Inactive')}
+                    />
+                </div>
+
                 <DataTable
                     tableId="departments"
                     columns={columns}
@@ -137,7 +333,8 @@ export default function DepartmentsIndex({ departments, filters }: Props) {
                     meta={meta}
                     baseUrl="/departments"
                     currentParams={currentParams}
-                    searchPlaceholder="Search departments…"
+                    searchPlaceholder="Search department name or code…"
+                    filterSlot={filterSlot}
                     entityLabel="departments"
                     emptyStateIcon={Building2}
                     emptyStateTitle="No departments found"
@@ -163,7 +360,13 @@ export default function DepartmentsIndex({ departments, filters }: Props) {
                         ) : undefined
                     }
                     rowActions={(row) => {
-                        const actions: RowAction<Department>[] = [];
+                        const actions: RowAction<Department>[] = [
+                            {
+                                label: 'View',
+                                icon: Eye,
+                                onClick: (r) => router.visit(`/departments/${r.id}`),
+                            },
+                        ];
 
                         if (can('departments.update')) {
                             actions.push({
@@ -173,7 +376,7 @@ export default function DepartmentsIndex({ departments, filters }: Props) {
                             });
                         }
 
-                        if (can('departments.delete') && (row.employees_count ?? 0) === 0) {
+                        if (can('departments.delete')) {
                             actions.push({
                                 label: 'Archive',
                                 icon: Trash2,
@@ -188,21 +391,20 @@ export default function DepartmentsIndex({ departments, filters }: Props) {
                 />
             </div>
 
-            {/* Create / Edit Dialog */}
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-                <DialogContent className="sm:max-w-md">
+                <DialogContent className="sm:max-w-lg">
                     <DialogHeader>
                         <DialogTitle className="text-lg font-bold">
                             {editingDept ? 'Edit Department' : 'Add Department'}
                         </DialogTitle>
                         <DialogDescription className="text-xs text-muted-foreground">
-                            Specify department name mapping details.
+                            Codes should be short identifiers (e.g. PROD, WH, QC).
                         </DialogDescription>
                     </DialogHeader>
 
-                    <form onSubmit={handleSubmit} className="space-y-6">
-                        <div className="space-y-4 py-2">
-                            <div className="space-y-2">
+                    <form onSubmit={handleSubmit} className="space-y-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="space-y-2 sm:col-span-2">
                                 <Label htmlFor="name">
                                     Department Name <span className="text-destructive">*</span>
                                 </Label>
@@ -214,11 +416,60 @@ export default function DepartmentsIndex({ departments, filters }: Props) {
                                     required
                                     autoFocus
                                 />
-                                <div className="min-h-[20px]">
-                                    <InputError message={errors.name} />
-                                </div>
+                                <InputError message={errors.name} />
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label>
+                                    Status <span className="text-destructive">*</span>
+                                </Label>
+                                <Select value={data.status} onValueChange={(v) => setData('status', v)}>
+                                    <SelectTrigger className="w-full">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {statuses.map((status) => (
+                                            <SelectItem key={status} value={status}>
+                                                {status}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                <InputError message={errors.status} />
+                            </div>
+
+                            <div className="space-y-2 sm:col-span-2">
+                                <Label>
+                                    Department Manager{' '}
+                                    <span className="text-[10px] text-muted-foreground/80 font-normal">(Optional)</span>
+                                </Label>
+                                <UserSearchSelect
+                                    value={data.manager_id}
+                                    selectedLabel={managerLabel}
+                                    placeholder="Search users…"
+                                    onChange={(val, option) => {
+                                        setData('manager_id', val);
+                                        setManagerLabel(option?.label ?? '');
+                                    }}
+                                />
+                                <InputError message={errors.manager_id} />
+                            </div>
+
+                            <div className="space-y-2 sm:col-span-2">
+                                <Label htmlFor="description">
+                                    Description{' '}
+                                    <span className="text-[10px] text-muted-foreground/80 font-normal">(Optional)</span>
+                                </Label>
+                                <Input
+                                    id="description"
+                                    placeholder="Internal notes about this department"
+                                    value={data.description}
+                                    onChange={(e) => setData('description', e.target.value)}
+                                />
+                                <InputError message={errors.description} />
                             </div>
                         </div>
+
                         <ModalButtons onCancel={() => setIsDialogOpen(false)} processing={processing} />
                     </form>
                 </DialogContent>
@@ -227,14 +478,24 @@ export default function DepartmentsIndex({ departments, filters }: Props) {
             <ConfirmDeleteDialog
                 open={deleteConfirmDept !== null}
                 onOpenChange={(open) => !open && setDeleteConfirmDept(null)}
-                title="Archive Department?"
+                title={deleteConfirmDept && isInUse(deleteConfirmDept) ? 'Cannot Archive Department' : 'Archive Department?'}
                 description={
-                    <>
-                        Archive <span className="font-semibold text-foreground">{deleteConfirmDept?.name}</span>? This can only be done when no employees are assigned.
-                    </>
+                    deleteConfirmDept && isInUse(deleteConfirmDept) ? (
+                        <>This department is currently in use.</>
+                    ) : (
+                        <>
+                            Archive <span className="font-semibold text-foreground">{deleteConfirmDept?.name}</span>? This can only be done when no employees or work centers are assigned.
+                        </>
+                    )
                 }
-                confirmLabel="Archive Department"
-                onConfirm={handleDeleteConfirm}
+                confirmLabel={deleteConfirmDept && isInUse(deleteConfirmDept) ? 'OK' : 'Archive Department'}
+                onConfirm={() => {
+                    if (deleteConfirmDept && isInUse(deleteConfirmDept)) {
+                        setDeleteConfirmDept(null);
+                        return;
+                    }
+                    handleDeleteConfirm();
+                }}
                 processing={processing}
             />
         </>

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\AutoGeneratesCode;
 use App\Models\Concerns\BelongsToActivePlant;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -11,7 +12,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class WorkCenter extends Model
 {
-    use BelongsToActivePlant, HasFactory, SoftDeletes;
+    use AutoGeneratesCode, BelongsToActivePlant, HasFactory, SoftDeletes;
 
     protected $fillable = [
         'organization_id',

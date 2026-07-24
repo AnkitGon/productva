@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\FactorySetupService;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -60,7 +61,7 @@ class HandleInertiaRequests extends Middleware
                     'active_plant_id' => $user->active_plant_id ?: ($user->organization ? $user->organization->plants()->where('is_default', true)->value('id') : null),
                     'plants' => $user->organization
                         ? $user->organization->plants()
-                            ->with(['manager:id,name,email'])
+                            ->with(['manager.user:id,name,email'])
                             ->get()
                         : [],
                     'active_plant' => $user->activePlant
@@ -71,6 +72,8 @@ class HandleInertiaRequests extends Middleware
                 ] : null,
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
+            'needsFactorySetup' => $user ? app(FactorySetupService::class)->needsSetup($user) : false,
+            'showGettingStarted' => $user ? app(FactorySetupService::class)->showInSidebar($user) : false,
         ];
     }
 }

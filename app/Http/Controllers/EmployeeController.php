@@ -30,7 +30,7 @@ class EmployeeController extends Controller
 
         $query = Employee::query()
             ->forActivePlant($user)
-            ->with(['plant', 'department', 'shift', 'manager.user', 'user.roles']);
+            ->with(['department', 'role', 'shift', 'manager.user', 'user.roles']);
 
         // Search
         if ($request->filled('search')) {
@@ -75,7 +75,8 @@ class EmployeeController extends Controller
 
         $departments = Department::query()
             ->forActivePlant($user)
-            ->get(['id', 'name']);
+            ->orderBy('name')
+            ->get(['id', 'name', 'code', 'status']);
 
         $shifts = Shift::query()
             ->forActivePlant($user)
@@ -83,15 +84,24 @@ class EmployeeController extends Controller
             ->orderBy('start_time')
             ->get(['id', 'name', 'code', 'status', 'start_time', 'end_time', 'overnight', 'working_minutes']);
 
-        // Roles for login assignment (exclude system/admin roles)
+        // Roles for assignment (exclude system/admin roles)
         $roles = Role::whereNotIn('slug', ['super-admin', 'admin'])->get(['id', 'name', 'slug']);
+
+        $editEmployee = null;
+        if ($request->filled('edit')) {
+            $editEmployee = Employee::query()
+                ->forActivePlant($user)
+                ->with(['department', 'role', 'shift', 'manager.user', 'user.roles'])
+                ->find($request->integer('edit'));
+        }
 
         return Inertia::render('employees/index', [
             'employees' => $employees,
             'departments' => $departments,
             'shifts' => $shifts,
             'roles' => $roles,
-            'filters' => $request->only(['department_id', 'shift_id', 'employment_type', 'status', 'has_login', 'search', 'sort_by', 'sort_dir', 'per_page']),
+            'editEmployee' => $editEmployee,
+            'filters' => $request->only(['department_id', 'shift_id', 'employment_type', 'status', 'has_login', 'search', 'sort_by', 'sort_dir', 'per_page', 'edit']),
         ]);
     }
 
@@ -109,23 +119,38 @@ class EmployeeController extends Controller
             'manager_id' => $request->filled('manager_id') ? $request->input('manager_id') : null,
             'department_id' => $request->filled('department_id') ? $request->input('department_id') : null,
             'shift_id' => $request->filled('shift_id') ? $request->input('shift_id') : null,
+            'role_id' => $request->filled('role_id') ? $request->input('role_id') : null,
+            'gender' => $request->filled('gender') ? $request->input('gender') : null,
+            'date_of_birth' => $request->filled('date_of_birth') ? $request->input('date_of_birth') : null,
+            'address' => $request->filled('address') ? $request->input('address') : null,
         ]);
 
         $validated = $request->validate([
             'employee_code' => [
-                'required',
+                'nullable',
                 'string',
                 'max:50',
-                Rule::unique('employees')->where('organization_id', $user->organization_id),
+                Rule::unique('employees')
+                    ->where('organization_id', $user->organization_id)
+                    ->where('plant_id', $user->active_plant_id)
+                    ->whereNull('deleted_at'),
             ],
             'first_name' => ['required', 'string', 'max:255'],
             'last_name' => ['required', 'string', 'max:255'],
             'display_name' => ['nullable', 'string', 'max:255'],
+            'gender' => ['nullable', 'string', Rule::in(Employee::GENDERS)],
+            'date_of_birth' => ['nullable', 'date', 'before:today'],
             'department_id' => [
                 'nullable',
                 Rule::exists('departments', 'id')
                     ->where('organization_id', $user->organization_id)
-                    ->where('plant_id', $user->active_plant_id),
+                    ->where('plant_id', $user->active_plant_id)
+                    ->where('status', 'Active')
+                    ->whereNull('deleted_at'),
+            ],
+            'role_id' => [
+                'nullable',
+                Rule::exists('roles', 'id')->where(fn ($query) => $query->whereNotIn('slug', ['super-admin', 'admin'])),
             ],
             'shift_id' => [
                 'nullable',
@@ -138,13 +163,17 @@ class EmployeeController extends Controller
             'job_title' => ['nullable', 'string', 'max:255'],
             'manager_id' => [
                 'nullable',
+                'integer',
                 Rule::exists('employees', 'id')
                     ->where('organization_id', $user->organization_id)
-                    ->where('plant_id', $user->active_plant_id),
+                    ->where('plant_id', $user->active_plant_id)
+                    ->where('status', 'Active')
+                    ->whereNull('deleted_at'),
             ],
             'email' => ['nullable', 'email', 'max:255'],
             'phone' => ['nullable', 'string', 'max:50'],
             'mobile' => ['nullable', 'string', 'max:50'],
+            'address' => ['nullable', 'string', 'max:1000'],
             'employment_type' => ['required', Rule::in(['Full-Time', 'Part-Time', 'Contract', 'Temporary', 'Intern'])],
             'hire_date' => ['nullable', 'date'],
             'status' => ['required', Rule::in(['Active', 'Inactive', 'On Leave', 'Terminated'])],
@@ -153,11 +182,6 @@ class EmployeeController extends Controller
             // System access fields
             'create_login' => ['boolean'],
             'login_email' => ['required_if:create_login,true', 'nullable', 'email', 'unique:users,email'],
-            'login_role_id' => [
-                'required_if:create_login,true',
-                'nullable',
-                Rule::exists('roles', 'id')->where(fn ($query) => $query->whereNotIn('slug', ['super-admin', 'admin'])),
-            ],
             'login_password' => ['required_if:create_login,true', 'nullable', 'string', 'min:8'],
         ], [
             'photo.image' => 'The photo must be an image file.',
@@ -176,7 +200,9 @@ class EmployeeController extends Controller
                 'active_plant_id' => $user->active_plant_id,
             ]);
 
-            $createdUser->roles()->sync([$validated['login_role_id']]);
+            if (! empty($validated['role_id'])) {
+                $createdUser->roles()->sync([$validated['role_id']]);
+            }
             $linkedUserId = $createdUser->id;
         }
 
@@ -186,7 +212,7 @@ class EmployeeController extends Controller
         }
 
         $employee = Employee::create([
-            ...collect($validated)->except(['photo', 'create_login', 'login_email', 'login_role_id', 'login_password'])->all(),
+            ...collect($validated)->except(['photo', 'create_login', 'login_email', 'login_password'])->all(),
             'photo_path' => $photoPath,
             'organization_id' => $user->organization_id,
             'plant_id' => $user->active_plant_id,
@@ -211,10 +237,30 @@ class EmployeeController extends Controller
             abort(403);
         }
 
-        $employee->load(['plant', 'department', 'shift', 'manager', 'user.roles']);
+        $employee->load([
+            'department',
+            'role.permissions',
+            'shift',
+            'manager',
+            'plant',
+            'user.roles.permissions',
+        ]);
+
+        $departments = Department::query()
+            ->forActivePlant($user)
+            ->orderBy('name')
+            ->get(['id', 'name', 'code', 'status']);
+
+        $shifts = Shift::query()
+            ->forActivePlant($user)
+            ->where('status', 'Active')
+            ->orderBy('start_time')
+            ->get(['id', 'name', 'code', 'status']);
 
         return Inertia::render('employees/profile', [
             'employee' => $employee,
+            'departments' => $departments,
+            'shifts' => $shifts,
         ]);
     }
 
@@ -232,23 +278,45 @@ class EmployeeController extends Controller
             'manager_id' => $request->filled('manager_id') ? $request->input('manager_id') : null,
             'department_id' => $request->filled('department_id') ? $request->input('department_id') : null,
             'shift_id' => $request->filled('shift_id') ? $request->input('shift_id') : null,
+            'role_id' => $request->filled('role_id') ? $request->input('role_id') : null,
+            'gender' => $request->filled('gender') ? $request->input('gender') : null,
+            'date_of_birth' => $request->filled('date_of_birth') ? $request->input('date_of_birth') : null,
+            'address' => $request->filled('address') ? $request->input('address') : null,
         ]);
 
         $validated = $request->validate([
             'employee_code' => [
-                'required',
+                'nullable',
                 'string',
                 'max:50',
-                Rule::unique('employees')->where('organization_id', $user->organization_id)->ignore($employee->id),
+                Rule::unique('employees')
+                    ->where('organization_id', $user->organization_id)
+                    ->where('plant_id', $user->active_plant_id)
+                    ->whereNull('deleted_at')
+                    ->ignore($employee->id),
             ],
             'first_name' => ['required', 'string', 'max:255'],
             'last_name' => ['required', 'string', 'max:255'],
             'display_name' => ['nullable', 'string', 'max:255'],
+            'gender' => ['nullable', 'string', Rule::in(Employee::GENDERS)],
+            'date_of_birth' => ['nullable', 'date', 'before:today'],
             'department_id' => [
                 'nullable',
-                Rule::exists('departments', 'id')
-                    ->where('organization_id', $user->organization_id)
-                    ->where('plant_id', $user->active_plant_id),
+                Rule::exists('departments', 'id')->where(function ($query) use ($user, $employee) {
+                    $query->where('organization_id', $user->organization_id)
+                        ->where('plant_id', $user->active_plant_id)
+                        ->whereNull('deleted_at')
+                        ->where(function ($statusQuery) use ($employee) {
+                            $statusQuery->where('status', 'Active');
+                            if ($employee->department_id) {
+                                $statusQuery->orWhere('id', $employee->department_id);
+                            }
+                        });
+                }),
+            ],
+            'role_id' => [
+                'nullable',
+                Rule::exists('roles', 'id')->where(fn ($query) => $query->whereNotIn('slug', ['super-admin', 'admin'])),
             ],
             'shift_id' => [
                 'nullable',
@@ -267,13 +335,23 @@ class EmployeeController extends Controller
             'job_title' => ['nullable', 'string', 'max:255'],
             'manager_id' => [
                 'nullable',
-                Rule::exists('employees', 'id')
-                    ->where('organization_id', $user->organization_id)
-                    ->where('plant_id', $user->active_plant_id),
+                'integer',
+                Rule::exists('employees', 'id')->where(function ($query) use ($user, $employee) {
+                    $query->where('organization_id', $user->organization_id)
+                        ->where('plant_id', $user->active_plant_id)
+                        ->whereNull('deleted_at')
+                        ->where(function ($statusQuery) use ($employee) {
+                            $statusQuery->where('status', 'Active');
+                            if ($employee->manager_id) {
+                                $statusQuery->orWhere('id', $employee->manager_id);
+                            }
+                        });
+                }),
             ],
             'email' => ['nullable', 'email', 'max:255'],
             'phone' => ['nullable', 'string', 'max:50'],
             'mobile' => ['nullable', 'string', 'max:50'],
+            'address' => ['nullable', 'string', 'max:1000'],
             'employment_type' => ['required', Rule::in(['Full-Time', 'Part-Time', 'Contract', 'Temporary', 'Intern'])],
             'hire_date' => ['nullable', 'date'],
             'status' => ['required', Rule::in(['Active', 'Inactive', 'On Leave', 'Terminated'])],
@@ -289,11 +367,6 @@ class EmployeeController extends Controller
                 $employee->user_id
                     ? Rule::unique('users', 'email')->ignore($employee->user_id)
                     : 'unique:users,email',
-            ],
-            'login_role_id' => [
-                'required_if:create_login,true',
-                'nullable',
-                Rule::exists('roles', 'id')->where(fn ($query) => $query->whereNotIn('slug', ['super-admin', 'admin'])),
             ],
             'login_password' => ['nullable', 'string', 'min:8'],
         ], [
@@ -315,7 +388,9 @@ class EmployeeController extends Controller
                     $updateData['password'] = Hash::make($validated['login_password']);
                 }
                 $employee->user->update($updateData);
-                $employee->user->roles()->sync([$validated['login_role_id']]);
+                $employee->user->roles()->sync(
+                    ! empty($validated['role_id']) ? [$validated['role_id']] : []
+                );
             } else {
                 // Create user profile
                 $createdUser = User::create([
@@ -326,9 +401,15 @@ class EmployeeController extends Controller
                     'organization_id' => $user->organization_id,
                     'active_plant_id' => $user->active_plant_id,
                 ]);
-                $createdUser->roles()->sync([$validated['login_role_id']]);
+                if (! empty($validated['role_id'])) {
+                    $createdUser->roles()->sync([$validated['role_id']]);
+                }
                 $linkedUserId = $createdUser->id;
             }
+        } elseif ($employee->user && array_key_exists('role_id', $validated)) {
+            $employee->user->roles()->sync(
+                ! empty($validated['role_id']) ? [$validated['role_id']] : []
+            );
         }
 
         $photoPath = $employee->photo_path;
@@ -344,8 +425,13 @@ class EmployeeController extends Controller
             $photoPath = null;
         }
 
+        $updatePayload = collect($validated)->except(['photo', 'remove_photo', 'create_login', 'login_email', 'login_password'])->all();
+        if (empty($updatePayload['employee_code'])) {
+            unset($updatePayload['employee_code']);
+        }
+
         $employee->update([
-            ...collect($validated)->except(['photo', 'remove_photo', 'create_login', 'login_email', 'login_role_id', 'login_password'])->all(),
+            ...$updatePayload,
             'photo_path' => $photoPath,
             'user_id' => $linkedUserId,
         ]);
@@ -359,6 +445,74 @@ class EmployeeController extends Controller
     }
 
     /**
+     * Perform a bulk action on selected employees.
+     */
+    public function bulk(Request $request)
+    {
+        $user = $request->user();
+        if (! $user || ! $user->organization_id || ! $user->active_plant_id) {
+            abort(403);
+        }
+
+        $validated = $request->validate([
+            'action' => ['required', Rule::in(['activate', 'deactivate', 'assign_shift', 'assign_department', 'export', 'delete'])],
+            'ids' => ['required', 'array', 'min:1'],
+            'ids.*' => ['integer'],
+            'shift_id' => [
+                'required_if:action,assign_shift',
+                'nullable',
+                Rule::exists('shifts', 'id')
+                    ->where('organization_id', $user->organization_id)
+                    ->where('plant_id', $user->active_plant_id)
+                    ->where('status', 'Active')
+                    ->whereNull('deleted_at'),
+            ],
+            'department_id' => [
+                'required_if:action,assign_department',
+                'nullable',
+                Rule::exists('departments', 'id')
+                    ->where('organization_id', $user->organization_id)
+                    ->where('plant_id', $user->active_plant_id)
+                    ->where('status', 'Active')
+                    ->whereNull('deleted_at'),
+            ],
+        ]);
+
+        $permission = match ($validated['action']) {
+            'activate', 'deactivate', 'assign_shift', 'assign_department' => 'employees.update',
+            'export' => 'employees.export',
+            'delete' => 'employees.delete',
+        };
+
+        if (! $user->hasPermission($permission)) {
+            abort(403);
+        }
+
+        $employees = Employee::query()
+            ->forActivePlant($user)
+            ->whereIn('id', $validated['ids'])
+            ->get();
+
+        if ($employees->isEmpty()) {
+            Inertia::flash('toast', [
+                'type' => 'error',
+                'message' => 'No matching employees found for this plant.',
+            ]);
+
+            return redirect()->back();
+        }
+
+        return match ($validated['action']) {
+            'activate' => $this->bulkUpdateStatus($employees, 'Active', 'Employees activated successfully.'),
+            'deactivate' => $this->bulkUpdateStatus($employees, 'Inactive', 'Employees deactivated successfully.'),
+            'assign_shift' => $this->bulkAssignShift($employees, (int) $validated['shift_id']),
+            'assign_department' => $this->bulkAssignDepartment($employees, (int) $validated['department_id']),
+            'export' => $this->bulkExport($employees),
+            'delete' => $this->bulkDelete($employees),
+        };
+    }
+
+    /**
      * Remove the specified employee from storage.
      */
     public function destroy(Request $request, Employee $employee)
@@ -368,7 +522,16 @@ class EmployeeController extends Controller
             abort(403);
         }
 
-        // Business Rule: Soft Delete only
+        // Soft delete / archive only. Hard delete is blocked when operational history exists.
+        if ($employee->hasOperationalHistory() && $request->boolean('force')) {
+            Inertia::flash('toast', [
+                'type' => 'error',
+                'message' => 'Employees with production, attendance, or quality history cannot be permanently deleted.',
+            ]);
+
+            return redirect()->back();
+        }
+
         $employee->delete();
 
         Inertia::flash('toast', [
@@ -377,6 +540,118 @@ class EmployeeController extends Controller
         ]);
 
         return redirect()->back();
+    }
+
+    private function bulkUpdateStatus($employees, string $status, string $message)
+    {
+        Employee::query()
+            ->whereIn('id', $employees->pluck('id'))
+            ->update(['status' => $status]);
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => $message,
+        ]);
+
+        return redirect()->back();
+    }
+
+    private function bulkAssignShift($employees, int $shiftId)
+    {
+        Employee::query()
+            ->whereIn('id', $employees->pluck('id'))
+            ->update(['shift_id' => $shiftId]);
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Shift assigned to selected employees.',
+        ]);
+
+        return redirect()->back();
+    }
+
+    private function bulkAssignDepartment($employees, int $departmentId)
+    {
+        Employee::query()
+            ->whereIn('id', $employees->pluck('id'))
+            ->update(['department_id' => $departmentId]);
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Department assigned to selected employees.',
+        ]);
+
+        return redirect()->back();
+    }
+
+    private function bulkDelete($employees)
+    {
+        Employee::query()
+            ->whereIn('id', $employees->pluck('id'))
+            ->delete();
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Selected employees archived successfully.',
+        ]);
+
+        return redirect()->back();
+    }
+
+    private function bulkExport($employees)
+    {
+        $employees->loadMissing(['department', 'shift', 'role', 'manager']);
+
+        $filename = 'employees-'.now()->format('Y-m-d-His').'.csv';
+        $headers = [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+        ];
+
+        $callback = function () use ($employees) {
+            $handle = fopen('php://output', 'w');
+            fputcsv($handle, [
+                'employee_code',
+                'first_name',
+                'last_name',
+                'display_name',
+                'email',
+                'phone',
+                'mobile',
+                'job_title',
+                'department',
+                'shift',
+                'role',
+                'manager',
+                'employment_type',
+                'hire_date',
+                'status',
+            ]);
+
+            foreach ($employees as $employee) {
+                fputcsv($handle, [
+                    $employee->employee_code,
+                    $employee->first_name,
+                    $employee->last_name,
+                    $employee->display_name,
+                    $employee->email,
+                    $employee->phone,
+                    $employee->mobile,
+                    $employee->job_title,
+                    $employee->department?->name,
+                    $employee->shift?->name,
+                    $employee->role?->name,
+                    $employee->manager?->name,
+                    $employee->employment_type,
+                    $employee->hire_date,
+                    $employee->status,
+                ]);
+            }
+
+            fclose($handle);
+        };
+
+        return response()->stream($callback, 200, $headers);
     }
 
     private function employeeBelongsToActivePlant(User $user, Employee $employee): bool

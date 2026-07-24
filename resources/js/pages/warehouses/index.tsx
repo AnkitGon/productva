@@ -63,7 +63,6 @@ interface WarehouseRow {
     status: string;
     warehouse_type_id: number;
     manager_employee_id: number | null;
-    plant?: { id: number; name: string; code: string } | null;
     warehouse_type?: TypeOption | null;
     manager?: ManagerOption | null;
 }
@@ -242,12 +241,6 @@ export default function WarehousesIndex({
             render: (row) => <span className="font-semibold">{row.name}</span>,
         },
         {
-            key: 'plant',
-            label: 'Plant',
-            className: 'text-muted-foreground',
-            render: (row) => row.plant?.name ?? plant?.name ?? '—',
-        },
-        {
             key: 'warehouse_type',
             label: 'Type',
             className: 'text-muted-foreground',
@@ -270,6 +263,41 @@ export default function WarehousesIndex({
             label: 'Status',
             sortable: true,
             render: (row) => <StatusBadge status={row.status} />,
+        },
+        {
+            key: 'phone',
+            label: 'Phone',
+            defaultVisible: false,
+            className: 'text-muted-foreground',
+            render: (row) => row.phone ?? '—',
+        },
+        {
+            key: 'email',
+            label: 'Email',
+            defaultVisible: false,
+            className: 'text-muted-foreground',
+            render: (row) => row.email ?? '—',
+        },
+        {
+            key: 'city',
+            label: 'City',
+            defaultVisible: false,
+            className: 'text-muted-foreground',
+            render: (row) => row.city ?? '—',
+        },
+        {
+            key: 'country',
+            label: 'Country',
+            defaultVisible: false,
+            className: 'text-muted-foreground',
+            render: (row) => row.country ?? '—',
+        },
+        {
+            key: 'allow_negative_stock',
+            label: 'Allow Negative Stock',
+            defaultVisible: false,
+            className: 'text-muted-foreground',
+            render: (row) => (row.allow_negative_stock ? 'Yes' : 'No'),
         },
     ];
 
@@ -402,7 +430,7 @@ export default function WarehousesIndex({
                     <DialogHeader>
                         <DialogTitle>{editing ? 'Edit Warehouse' : 'Add Warehouse'}</DialogTitle>
                         <DialogDescription className="text-xs">
-                            Warehouses are scoped to the active plant{plant ? ` (${plant.name})` : ''}. Plant cannot be changed after creation.
+                            Create or update a warehouse for the active plant.
                         </DialogDescription>
                     </DialogHeader>
 
@@ -410,10 +438,6 @@ export default function WarehousesIndex({
                         <div className="space-y-3">
                             <h3 className="text-sm font-semibold">General</h3>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <div className="space-y-2 sm:col-span-2">
-                                    <Label>Plant</Label>
-                                    <Input value={plant ? `${plant.code} — ${plant.name}` : 'Active plant'} disabled />
-                                </div>
                                 <div className="space-y-2">
                                     <Label>Warehouse Type <span className="text-destructive">*</span></Label>
                                     <Select
@@ -444,16 +468,7 @@ export default function WarehousesIndex({
                                     </Select>
                                     <InputError message={form.errors.status} />
                                 </div>
-                                <div className="space-y-2">
-                                    <Label>Warehouse Code <span className="text-destructive">*</span></Label>
-                                    <Input
-                                        value={form.data.code}
-                                        onChange={(e) => form.setData('code', e.target.value.toUpperCase())}
-                                        maxLength={50}
-                                        required
-                                    />
-                                    <InputError message={form.errors.code} />
-                                </div>
+
                                 <div className="space-y-2">
                                     <Label>Warehouse Name <span className="text-destructive">*</span></Label>
                                     <Input

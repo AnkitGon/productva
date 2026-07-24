@@ -26,7 +26,7 @@ class ProductCategoryController extends Controller
         $query = ProductCategory::query()
             ->forOrganization($user)
             ->with(['parent:id,code,name'])
-            ->withCount('products');
+            ->withCount(['products', 'children']);
 
         if ($request->filled('search')) {
             $search = $request->search;
@@ -114,10 +114,15 @@ class ProductCategoryController extends Controller
 
         $validated = $this->validateCategory($request, $user, $productCategory);
 
-        $productCategory->update([
+        $updateData = [
             ...$validated,
             'updated_by' => $user->id,
-        ]);
+        ];
+        if (empty($updateData['code'])) {
+            unset($updateData['code']);
+        }
+
+        $productCategory->update($updateData);
 
         Inertia::flash('toast', [
             'type' => 'success',
@@ -138,9 +143,22 @@ class ProductCategoryController extends Controller
         }
 
         if ($productCategory->hasProducts()) {
+            $count = $productCategory->products_count;
+
             Inertia::flash('toast', [
                 'type' => 'error',
-                'message' => 'Cannot archive this category while products are assigned to it.',
+                'message' => "Cannot delete. Category contains {$count} ".($count === 1 ? 'product' : 'products').'.',
+            ]);
+
+            return redirect()->back();
+        }
+
+        if ($productCategory->hasChildren()) {
+            $count = $productCategory->children_count;
+
+            Inertia::flash('toast', [
+                'type' => 'error',
+                'message' => "Cannot delete. Category has {$count} ".($count === 1 ? 'child category' : 'child categories').'.',
             ]);
 
             return redirect()->back();
@@ -163,6 +181,7 @@ class ProductCategoryController extends Controller
     {
         $request->merge([
             'code' => strtoupper(trim((string) $request->input('code', ''))),
+            'name' => trim((string) $request->input('name', '')),
             'parent_id' => $request->filled('parent_id') ? $request->input('parent_id') : null,
             'description' => $request->filled('description') ? $request->input('description') : null,
             'sort_order' => $request->filled('sort_order') ? $request->input('sort_order') : 0,
@@ -173,8 +192,14 @@ class ProductCategoryController extends Controller
                 ->where('organization_id', $user->organization_id)
                 ->whereNull('deleted_at'));
 
+        $uniqueName = Rule::unique('product_categories', 'name')
+            ->where(fn ($query) => $query
+                ->where('organization_id', $user->organization_id)
+                ->whereNull('deleted_at'));
+
         if ($productCategory) {
             $uniqueCode->ignore($productCategory->id);
+            $uniqueName->ignore($productCategory->id);
         }
 
         $parentRules = [
@@ -191,13 +216,14 @@ class ProductCategoryController extends Controller
 
         $validated = $request->validate([
             'parent_id' => $parentRules,
-            'code' => ['required', 'string', 'max:20', $uniqueCode],
-            'name' => ['required', 'string', 'max:100'],
+            'code' => ['nullable', 'string', 'max:20', $uniqueCode],
+            'name' => ['required', 'string', 'max:100', $uniqueName],
             'description' => ['nullable', 'string', 'max:5000'],
             'sort_order' => ['nullable', 'integer', 'min:0', 'max:999999'],
             'status' => ['required', Rule::in(ProductCategory::STATUSES)],
         ], [
             'parent_id.not_in' => 'A category cannot be its own parent.',
+            'name.unique' => 'A category with this name already exists.',
         ]);
 
         $parentId = isset($validated['parent_id']) ? (int) $validated['parent_id'] : null;

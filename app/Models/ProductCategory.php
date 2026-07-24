@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\AutoGeneratesCode;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -11,7 +12,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class ProductCategory extends Model
 {
-    use HasFactory, SoftDeletes;
+    use AutoGeneratesCode, HasFactory, SoftDeletes;
 
     public const STATUSES = [
         'Active',
@@ -109,6 +110,15 @@ class ProductCategory extends Model
         return $this->products()->exists();
     }
 
+    public function hasChildren(): bool
+    {
+        if (array_key_exists('children_count', $this->attributes)) {
+            return (int) $this->attributes['children_count'] > 0;
+        }
+
+        return $this->children()->exists();
+    }
+
     public function getProductsCountAttribute(): int
     {
         if (array_key_exists('products_count', $this->attributes)) {
@@ -116,6 +126,15 @@ class ProductCategory extends Model
         }
 
         return $this->products()->count();
+    }
+
+    public function getChildrenCountAttribute(): int
+    {
+        if (array_key_exists('children_count', $this->attributes)) {
+            return (int) $this->attributes['children_count'];
+        }
+
+        return $this->children()->count();
     }
 
     /**

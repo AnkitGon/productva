@@ -2,8 +2,10 @@
 
 use App\Models\Organization;
 use App\Models\Permission;
+use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\Role;
+use App\Models\UnitOfMeasure;
 use App\Models\User;
 use Database\Seeders\RolesAndPermissionsSeeder;
 
@@ -173,6 +175,102 @@ test('category code must be unique within the organization', function () {
         ->assertRedirect();
 
     expect(ProductCategory::where('code', 'RAW')->count())->toBe(2);
+});
+
+test('category name must be unique within the organization', function () {
+    createProductCategory($this->admin, [
+        'code' => 'RAW',
+        'name' => 'Raw Materials',
+    ]);
+
+    $this->actingAs($this->admin)
+        ->post(route('product-categories.store'), [
+            'code' => 'RAW2',
+            'name' => 'Raw Materials',
+            'status' => 'Active',
+        ])
+        ->assertSessionHasErrors('name');
+
+    $this->actingAs($this->otherAdmin)
+        ->post(route('product-categories.store'), [
+            'code' => 'RAW',
+            'name' => 'Raw Materials',
+            'status' => 'Active',
+        ])
+        ->assertRedirect();
+
+    expect(ProductCategory::where('name', 'Raw Materials')->count())->toBe(2);
+});
+
+test('category name can be reused after soft delete', function () {
+    $category = createProductCategory($this->admin, [
+        'code' => 'RAW',
+        'name' => 'Raw Materials',
+    ]);
+    $category->delete();
+
+    $this->actingAs($this->admin)
+        ->post(route('product-categories.store'), [
+            'code' => 'RAW',
+            'name' => 'Raw Materials',
+            'status' => 'Active',
+        ])
+        ->assertRedirect();
+
+    expect(ProductCategory::where('name', 'Raw Materials')->count())->toBe(1);
+});
+
+test('cannot delete a category that contains products', function () {
+    $category = createProductCategory($this->admin, [
+        'code' => 'PKG',
+        'name' => 'Packaging',
+    ]);
+
+    $uom = UnitOfMeasure::create([
+        'organization_id' => $this->org->id,
+        'code' => 'PCS',
+        'name' => 'Pieces',
+        'symbol' => 'pcs',
+        'type' => 'Count',
+        'decimal_places' => 0,
+        'status' => 'Active',
+    ]);
+
+    Product::create([
+        'organization_id' => $this->org->id,
+        'sku' => 'PKG-1',
+        'name' => 'Box',
+        'category_id' => $category->id,
+        'uom_id' => $uom->id,
+        'type' => 'Packaging',
+        'status' => 'Active',
+        'created_by' => $this->admin->id,
+        'updated_by' => $this->admin->id,
+    ]);
+
+    $this->actingAs($this->admin)
+        ->delete(route('product-categories.destroy', $category))
+        ->assertRedirect();
+
+    expect(ProductCategory::find($category->id))->not->toBeNull();
+});
+
+test('cannot delete a parent category that has children', function () {
+    $parent = createProductCategory($this->admin, [
+        'code' => 'RAW',
+        'name' => 'Raw Materials',
+    ]);
+    createProductCategory($this->admin, [
+        'code' => 'STEEL',
+        'name' => 'Steel',
+        'parent_id' => $parent->id,
+    ]);
+
+    $this->actingAs($this->admin)
+        ->delete(route('product-categories.destroy', $parent))
+        ->assertRedirect();
+
+    expect(ProductCategory::find($parent->id))->not->toBeNull();
 });
 
 test('inactive categories cannot be assigned to products', function () {

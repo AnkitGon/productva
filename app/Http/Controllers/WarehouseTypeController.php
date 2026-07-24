@@ -90,6 +90,10 @@ class WarehouseTypeController extends Controller
 
         $validated = $this->validateType($request, $user, $warehouseType);
 
+        if (empty($validated['code'])) {
+            unset($validated['code']);
+        }
+
         $warehouseType->update($validated);
 
         Inertia::flash('toast', [
@@ -135,7 +139,7 @@ class WarehouseTypeController extends Controller
     private function validateType(Request $request, $user, ?WarehouseType $warehouseType = null): array
     {
         $request->merge([
-            'code' => strtoupper(trim((string) $request->input('code', ''))),
+            'code' => $request->filled('code') ? strtoupper(trim((string) $request->input('code'))) : null,
             'description' => $request->filled('description') ? $request->input('description') : null,
         ]);
 
@@ -149,7 +153,7 @@ class WarehouseTypeController extends Controller
         }
 
         return $request->validate([
-            'code' => ['required', 'string', 'max:20', $uniqueCode],
+            'code' => ['nullable', 'string', 'max:20', $uniqueCode],
             'name' => ['required', 'string', 'max:100'],
             'description' => ['nullable', 'string', 'max:5000'],
             'status' => ['required', Rule::in(WarehouseType::STATUSES)],

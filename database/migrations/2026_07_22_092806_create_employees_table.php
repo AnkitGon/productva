@@ -21,6 +21,8 @@ return new class extends Migration
             $table->foreignId('organization_id')->constrained()->cascadeOnDelete();
             $table->foreignId('plant_id')->constrained()->cascadeOnDelete();
             $table->foreignId('department_id')->nullable()->constrained()->nullOnDelete();
+            $table->foreignId('role_id')->nullable()->constrained('roles')->nullOnDelete();
+            $table->foreignId('shift_id')->nullable()->constrained('shifts')->nullOnDelete();
             $table->string('job_title')->nullable();
             $table->foreignId('manager_id')->nullable()->references('id')->on('employees')->nullOnDelete();
             $table->string('email')->nullable();
@@ -29,11 +31,9 @@ return new class extends Migration
             $table->enum('employment_type', ['Full-Time', 'Part-Time', 'Contract', 'Temporary', 'Intern'])->default('Full-Time');
             $table->date('hire_date')->nullable();
             $table->enum('status', ['Active', 'Inactive', 'On Leave', 'Terminated'])->default('Active');
-            $table->foreignId('user_id')->nullable()->unique()->constrained()->nullOnDelete();
+            $table->foreignId('user_id')->nullable()->index()->constrained()->nullOnDelete();
             $table->timestamps();
             $table->softDeletes();
-
-            $table->unique(['organization_id', 'employee_code']);
         });
     }
 

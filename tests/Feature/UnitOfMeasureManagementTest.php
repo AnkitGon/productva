@@ -2,6 +2,8 @@
 
 use App\Models\Organization;
 use App\Models\Permission;
+use App\Models\Product;
+use App\Models\ProductCategory;
 use App\Models\Role;
 use App\Models\UnitOfMeasure;
 use App\Models\User;
@@ -137,6 +139,94 @@ test('unit of measure code must be unique within the organization', function () 
         ->assertRedirect();
 
     expect(UnitOfMeasure::where('code', 'PCS')->count())->toBe(2);
+});
+
+test('unit of measure name must be unique within the organization', function () {
+    createUnitOfMeasure($this->admin, [
+        'code' => 'PCS',
+        'name' => 'Pieces',
+    ]);
+
+    $this->actingAs($this->admin)
+        ->post(route('units-of-measure.store'), [
+            'code' => 'EA',
+            'name' => 'Pieces',
+            'symbol' => 'ea',
+            'type' => 'Count',
+            'decimal_places' => 0,
+            'status' => 'Active',
+        ])
+        ->assertSessionHasErrors('name');
+
+    $this->actingAs($this->otherAdmin)
+        ->post(route('units-of-measure.store'), [
+            'code' => 'PCS',
+            'name' => 'Pieces',
+            'symbol' => 'pcs',
+            'type' => 'Count',
+            'decimal_places' => 0,
+            'status' => 'Active',
+        ])
+        ->assertRedirect();
+
+    expect(UnitOfMeasure::where('name', 'Pieces')->count())->toBe(2);
+});
+
+test('unit of measure name can be reused after soft delete', function () {
+    $unit = createUnitOfMeasure($this->admin, [
+        'code' => 'PCS',
+        'name' => 'Pieces',
+    ]);
+    $unit->delete();
+
+    $this->actingAs($this->admin)
+        ->post(route('units-of-measure.store'), [
+            'code' => 'PCS',
+            'name' => 'Pieces',
+            'symbol' => 'pcs',
+            'type' => 'Count',
+            'decimal_places' => 0,
+            'status' => 'Active',
+        ])
+        ->assertRedirect();
+
+    expect(UnitOfMeasure::where('name', 'Pieces')->count())->toBe(1);
+});
+
+test('units of measure index includes product counts', function () {
+    $unit = createUnitOfMeasure($this->admin, [
+        'code' => 'PCS',
+        'name' => 'Pieces',
+    ]);
+
+    $category = ProductCategory::create([
+        'organization_id' => $this->org->id,
+        'code' => 'FG',
+        'name' => 'Finished Goods',
+        'status' => 'Active',
+        'created_by' => $this->admin->id,
+        'updated_by' => $this->admin->id,
+    ]);
+
+    Product::create([
+        'organization_id' => $this->org->id,
+        'sku' => 'WID-1',
+        'name' => 'Widget',
+        'category_id' => $category->id,
+        'uom_id' => $unit->id,
+        'type' => 'Finished Good',
+        'status' => 'Active',
+        'created_by' => $this->admin->id,
+        'updated_by' => $this->admin->id,
+    ]);
+
+    $this->actingAs($this->admin)
+        ->get(route('units-of-measure.index'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('units-of-measure/index')
+            ->where('unitsOfMeasure.data.0.products_count', 1)
+        );
 });
 
 test('decimal places must be between 0 and 6', function () {

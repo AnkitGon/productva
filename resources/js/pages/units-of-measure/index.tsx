@@ -36,6 +36,7 @@ interface UnitOfMeasure {
     decimal_places: number;
     status: 'Active' | 'Inactive';
     description: string | null;
+    products_count?: number;
 }
 
 interface PaginatedUnitsOfMeasure {
@@ -172,6 +173,29 @@ export default function UnitsOfMeasureIndex({ unitsOfMeasure, types, statuses, f
             className: 'text-muted-foreground',
         },
         {
+            key: 'products_count',
+            label: 'Products',
+            className: 'text-muted-foreground',
+            render: (row) => {
+                const count = row.products_count ?? 0;
+                const label = `${count} ${count === 1 ? 'product' : 'products'}`;
+
+                if (count === 0) {
+                    return label;
+                }
+
+                return (
+                    <button
+                        type="button"
+                        className="cursor-pointer font-medium text-foreground hover:underline"
+                        onClick={() => router.visit(`/products?uom_id=${row.id}`)}
+                    >
+                        {label}
+                    </button>
+                );
+            },
+        },
+        {
             key: 'decimal_places',
             label: 'Decimals',
             sortable: true,
@@ -182,6 +206,13 @@ export default function UnitsOfMeasureIndex({ unitsOfMeasure, types, statuses, f
             label: 'Status',
             sortable: true,
             render: (row) => <StatusBadge status={row.status} />,
+        },
+        {
+            key: 'description',
+            label: 'Description',
+            defaultVisible: false,
+            className: 'text-muted-foreground',
+            render: (row) => row.description ?? '—',
         },
     ];
 
@@ -321,20 +352,7 @@ export default function UnitsOfMeasureIndex({ unitsOfMeasure, types, statuses, f
 
                     <form onSubmit={handleSubmit} className="space-y-6">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                                <Label htmlFor="code">
-                                    Code <span className="text-destructive">*</span>
-                                </Label>
-                                <Input
-                                    id="code"
-                                    value={form.data.code}
-                                    onChange={(e) => form.setData('code', e.target.value.toUpperCase())}
-                                    placeholder="PCS"
-                                    maxLength={20}
-                                    required
-                                />
-                                <InputError message={form.errors.code} />
-                            </div>
+
 
                             <div className="space-y-2">
                                 <Label htmlFor="symbol">

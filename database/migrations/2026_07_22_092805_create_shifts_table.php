@@ -25,6 +25,7 @@ return new class extends Migration
             $table->boolean('overnight')->default(false);
             $table->unsignedInteger('working_minutes')->default(0);
             $table->string('status')->default('Active');
+            $table->string('color', 20)->default('blue');
             $table->text('notes')->nullable();
             $table->foreignId('created_by')->constrained('users')->cascadeOnDelete();
             $table->foreignId('updated_by')->nullable()->constrained('users')->nullOnDelete();

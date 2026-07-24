@@ -59,6 +59,7 @@ function createShift(User $user, Plant $plant, array $overrides = []): Shift
         'overnight' => $overnight,
         'working_minutes' => Shift::calculateWorkingMinutes($start, $end, (bool) $overnight, (int) $break),
         'status' => 'Active',
+        'color' => 'blue',
         'created_by' => $user->id,
         'updated_by' => $user->id,
     ], $overrides));
@@ -76,6 +77,7 @@ test('admin can view shifts for the active plant only', function () {
             ->has('shifts.data', 1)
             ->where('shifts.data.0.code', 'MORN')
             ->has('templates')
+            ->has('colors')
             ->missing('plants')
         );
 });
@@ -92,6 +94,7 @@ test('admin can create a morning shift with calculated working minutes', functio
             'grace_in_minutes' => 10,
             'grace_out_minutes' => 5,
             'status' => 'Active',
+            'color' => 'blue',
             'notes' => 'Standard day shift',
         ])
         ->assertRedirect();
@@ -101,6 +104,7 @@ test('admin can create a morning shift with calculated working minutes', functio
     expect($shift->working_minutes)->toBe(420);
     expect($shift->hours_label)->toBe('7h');
     expect($shift->plant_id)->toBe($this->plant->id);
+    expect($shift->color)->toBe('blue');
 });
 
 test('overnight night shift calculates duration across midnight', function () {
@@ -115,11 +119,13 @@ test('overnight night shift calculates duration across midnight', function () {
             'grace_in_minutes' => 0,
             'grace_out_minutes' => 0,
             'status' => 'Active',
+            'color' => 'purple',
         ])
         ->assertRedirect();
 
     $shift = Shift::where('code', 'NIGHT')->firstOrFail();
     expect($shift->working_minutes)->toBe(420);
+    expect($shift->color)->toBe('purple');
 });
 
 test('shift code must be unique per plant but can repeat across plants', function () {
@@ -180,6 +186,59 @@ test('break cannot exceed shift duration', function () {
             'status' => 'Active',
         ])
         ->assertSessionHasErrors('break_minutes');
+});
+
+test('shift notes cannot exceed 1000 characters', function () {
+    $this->actingAs($this->admin)
+        ->post(route('shifts.store'), [
+            'code' => 'LONGNOTE',
+            'name' => 'Long Notes',
+            'start_time' => '06:00',
+            'end_time' => '14:00',
+            'overnight' => false,
+            'break_minutes' => 0,
+            'status' => 'Active',
+            'color' => 'blue',
+            'notes' => str_repeat('a', 1001),
+        ])
+        ->assertSessionHasErrors('notes');
+});
+
+test('employees index can be filtered by shift', function () {
+    $shift = createShift($this->admin, $this->plant, ['code' => 'MORN', 'color' => 'blue']);
+    $otherShift = createShift($this->admin, $this->plant, ['code' => 'EVE', 'name' => 'Evening', 'color' => 'orange']);
+
+    Employee::create([
+        'employee_code' => 'SH-VIEW-1',
+        'first_name' => 'On',
+        'last_name' => 'Morning',
+        'organization_id' => $this->org->id,
+        'plant_id' => $this->plant->id,
+        'shift_id' => $shift->id,
+        'employment_type' => 'Full-Time',
+        'status' => 'Active',
+    ]);
+
+    Employee::create([
+        'employee_code' => 'SH-VIEW-2',
+        'first_name' => 'On',
+        'last_name' => 'Evening',
+        'organization_id' => $this->org->id,
+        'plant_id' => $this->plant->id,
+        'shift_id' => $otherShift->id,
+        'employment_type' => 'Full-Time',
+        'status' => 'Active',
+    ]);
+
+    $this->actingAs($this->admin)
+        ->get(route('employees.index', ['shift_id' => $shift->id]))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('employees/index')
+            ->has('employees.data', 1)
+            ->where('employees.data.0.employee_code', 'SH-VIEW-1')
+            ->where('filters.shift_id', (string) $shift->id)
+        );
 });
 
 test('cannot archive shift with assigned employees', function () {

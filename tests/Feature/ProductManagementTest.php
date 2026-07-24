@@ -2,11 +2,14 @@
 
 use App\Models\Organization;
 use App\Models\Permission;
+use App\Models\Plant;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\Role;
 use App\Models\UnitOfMeasure;
 use App\Models\User;
+use App\Models\Warehouse;
+use App\Models\WarehouseType;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -286,6 +289,171 @@ test('products can be filtered and searched', function () {
         ->get(route('products.index', ['track_inventory' => '0']))
         ->assertOk()
         ->assertInertia(fn ($page) => $page->has('products.data', 1)->where('products.data.0.sku', 'RM-100'));
+});
+
+test('products can be filtered by warehouse manufacturer and brand', function () {
+    $plant = Plant::firstOrCreate([
+        'organization_id' => $this->org->id,
+        'code' => 'PPF1',
+        'slug' => 'product-filter-plant',
+    ], [
+        'name' => 'Product Filter Plant',
+    ]);
+
+    WarehouseType::ensureDefaultsFor($this->org->id);
+    $warehouseType = WarehouseType::query()
+        ->where('organization_id', $this->org->id)
+        ->where('code', 'RAW')
+        ->firstOrFail();
+
+    $warehouse = Warehouse::create([
+        'organization_id' => $this->org->id,
+        'plant_id' => $plant->id,
+        'warehouse_type_id' => $warehouseType->id,
+        'code' => 'WH-F1',
+        'name' => 'Filter Warehouse',
+        'status' => 'Active',
+        'created_by' => $this->admin->id,
+        'updated_by' => $this->admin->id,
+    ]);
+
+    createProduct($this->admin, $this->category, $this->uom, [
+        'sku' => 'BRAND-1',
+        'name' => 'Branded Item',
+        'brand' => 'Acme',
+        'manufacturer' => 'Acme Corp',
+        'default_warehouse_id' => $warehouse->id,
+    ]);
+    createProduct($this->admin, $this->category, $this->uom, [
+        'sku' => 'OTHER-1',
+        'name' => 'Other Item',
+        'brand' => 'Beta',
+        'manufacturer' => 'Beta Inc',
+    ]);
+
+    $this->actingAs($this->admin)
+        ->get(route('products.index', ['brand' => 'Acme']))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page->has('products.data', 1)->where('products.data.0.sku', 'BRAND-1'));
+
+    $this->actingAs($this->admin)
+        ->get(route('products.index', ['manufacturer' => 'Acme Corp']))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page->has('products.data', 1)->where('products.data.0.sku', 'BRAND-1'));
+
+    $this->actingAs($this->admin)
+        ->get(route('products.index', ['default_warehouse_id' => $warehouse->id]))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page->has('products.data', 1)->where('products.data.0.sku', 'BRAND-1'));
+});
+
+test('admin can store opening stock and opening cost', function () {
+    $this->actingAs($this->admin)
+        ->post(route('products.store'), [
+            'sku' => 'OPEN-1',
+            'name' => 'Opening Stock Item',
+            'category_id' => $this->category->id,
+            'uom_id' => $this->uom->id,
+            'type' => 'Finished Good',
+            'status' => 'Active',
+            'track_inventory' => true,
+            'opening_stock' => 25,
+            'opening_cost' => 12.5,
+        ])
+        ->assertRedirect(route('products.index'));
+
+    $product = Product::query()->where('sku', 'OPEN-1')->first();
+
+    expect($product)->not->toBeNull()
+        ->and((float) $product->opening_stock)->toBe(25.0)
+        ->and((float) $product->opening_cost)->toBe(12.5);
+});
+
+test('stock levels must follow maximum >= minimum >= safety <= reorder', function () {
+    $this->actingAs($this->admin)
+        ->post(route('products.store'), [
+            'sku' => 'STOCK-BAD-1',
+            'name' => 'Bad Max Min',
+            'category_id' => $this->category->id,
+            'uom_id' => $this->uom->id,
+            'type' => 'Finished Good',
+            'status' => 'Active',
+            'track_inventory' => true,
+            'maximum_stock' => 5,
+            'minimum_stock' => 10,
+        ])
+        ->assertSessionHasErrors('maximum_stock');
+
+    $this->actingAs($this->admin)
+        ->post(route('products.store'), [
+            'sku' => 'STOCK-BAD-2',
+            'name' => 'Bad Min Safety',
+            'category_id' => $this->category->id,
+            'uom_id' => $this->uom->id,
+            'type' => 'Finished Good',
+            'status' => 'Active',
+            'track_inventory' => true,
+            'minimum_stock' => 5,
+            'safety_stock' => 10,
+        ])
+        ->assertSessionHasErrors('minimum_stock');
+
+    $this->actingAs($this->admin)
+        ->post(route('products.store'), [
+            'sku' => 'STOCK-BAD-3',
+            'name' => 'Bad Safety Reorder',
+            'category_id' => $this->category->id,
+            'uom_id' => $this->uom->id,
+            'type' => 'Finished Good',
+            'status' => 'Active',
+            'track_inventory' => true,
+            'safety_stock' => 20,
+            'reorder_level' => 10,
+        ])
+        ->assertSessionHasErrors('safety_stock');
+
+    $this->actingAs($this->admin)
+        ->post(route('products.store'), [
+            'sku' => 'STOCK-OK',
+            'name' => 'Valid Stock Levels',
+            'category_id' => $this->category->id,
+            'uom_id' => $this->uom->id,
+            'type' => 'Finished Good',
+            'status' => 'Active',
+            'track_inventory' => true,
+            'maximum_stock' => 100,
+            'minimum_stock' => 40,
+            'safety_stock' => 20,
+            'reorder_level' => 30,
+        ])
+        ->assertRedirect(route('products.index'));
+});
+
+test('turning off track inventory clears warehouse opening stock and negative stock', function () {
+    $this->actingAs($this->admin)
+        ->post(route('products.store'), [
+            'sku' => 'NO-TRACK-1',
+            'name' => 'Untracked Item',
+            'category_id' => $this->category->id,
+            'uom_id' => $this->uom->id,
+            'type' => 'Service',
+            'status' => 'Active',
+            'track_inventory' => false,
+            'allow_negative_stock' => true,
+            'opening_stock' => 50,
+            'opening_cost' => 9.99,
+            'default_warehouse_id' => null,
+        ])
+        ->assertRedirect(route('products.index'));
+
+    $product = Product::query()->where('sku', 'NO-TRACK-1')->first();
+
+    expect($product)->not->toBeNull()
+        ->and($product->track_inventory)->toBeFalse()
+        ->and($product->allow_negative_stock)->toBeFalse()
+        ->and($product->default_warehouse_id)->toBeNull()
+        ->and((float) $product->opening_stock)->toBe(0.0)
+        ->and((float) $product->opening_cost)->toBe(0.0);
 });
 
 test('admin can export and import products csv', function () {

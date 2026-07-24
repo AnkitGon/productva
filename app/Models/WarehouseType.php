@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\AutoGeneratesCode;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -11,7 +12,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class WarehouseType extends Model
 {
-    use HasFactory, SoftDeletes;
+    use AutoGeneratesCode, HasFactory, SoftDeletes;
 
     public const STATUSES = [
         'Active',

@@ -11,12 +11,8 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('employees', function (Blueprint $table) {
-            $table->foreignId('shift_id')
-                ->nullable()
-                ->after('department_id')
-                ->constrained('shifts')
-                ->nullOnDelete();
+        Schema::table('users', function (Blueprint $table) {
+            $table->timestamp('getting_started_prompted_at')->nullable()->after('active_plant_id');
         });
     }
 
@@ -25,8 +21,8 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('employees', function (Blueprint $table) {
-            $table->dropConstrainedForeignId('shift_id');
+        Schema::table('users', function (Blueprint $table) {
+            $table->dropColumn('getting_started_prompted_at');
         });
     }
 };

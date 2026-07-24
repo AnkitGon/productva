@@ -19,9 +19,10 @@ type UserSearchSelectProps = {
     searchPlaceholder?: string;
     disabled?: boolean;
     className?: string;
-    /** When true, only users with an employee profile are returned and value uses employee_id. */
+    /** When true, search plant employees (login optional) and value uses employee_id. */
     withEmployee?: boolean;
     excludeUserId?: number | null;
+    excludeEmployeeId?: number | null;
     clearable?: boolean;
 };
 
@@ -30,11 +31,12 @@ export function UserSearchSelect({
     selectedLabel,
     onChange,
     placeholder = 'Search users…',
-    searchPlaceholder = 'Type to search users…',
+    searchPlaceholder = 'Type to search…',
     disabled = false,
     className,
     withEmployee = false,
     excludeUserId = null,
+    excludeEmployeeId = null,
     clearable = true,
 }: UserSearchSelectProps) {
     const [isOpen, setIsOpen] = useState(false);
@@ -92,6 +94,9 @@ export function UserSearchSelect({
                 if (excludeUserId) {
                     params.set('exclude_user_id', String(excludeUserId));
                 }
+                if (excludeEmployeeId) {
+                    params.set('exclude_employee_id', String(excludeEmployeeId));
+                }
 
                 const response = await fetch(`/organization/users/search?${params.toString()}`, {
                     signal: controller.signal,
@@ -127,7 +132,7 @@ export function UserSearchSelect({
                 clearTimeout(debounceRef.current);
             }
         };
-    }, [searchQuery, isOpen, withEmployee, excludeUserId]);
+    }, [searchQuery, isOpen, withEmployee, excludeUserId, excludeEmployeeId]);
 
     const resolveValue = (option: UserSearchOption): string => {
         if (withEmployee) {
@@ -135,6 +140,11 @@ export function UserSearchSelect({
         }
         return String(option.id);
     };
+
+    const emptyMessage = withEmployee ? 'No employees found.' : 'No users found.';
+    const startTypingMessage = withEmployee
+        ? 'Start typing to search employees.'
+        : 'Start typing to search users.';
 
     return (
         <div ref={containerRef} className={cn('relative w-full', className)}>
@@ -191,11 +201,11 @@ export function UserSearchSelect({
                         </div>
                     ) : searchQuery.trim().length < 1 ? (
                         <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                            Start typing to search users.
+                            {startTypingMessage}
                         </div>
                     ) : options.length === 0 ? (
                         <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                            No users found.
+                            {emptyMessage}
                         </div>
                     ) : (
                         options.map((option) => {

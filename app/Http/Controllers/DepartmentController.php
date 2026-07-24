@@ -24,24 +24,65 @@ class DepartmentController extends Controller
 
         $query = Department::query()
             ->forActivePlant($user)
-            ->withCount(['employees' => fn ($q) => $q->where('plant_id', $user->active_plant_id)]);
+            ->with(['manager:id,name,email'])
+            ->withCount([
+                'employees' => fn ($q) => $q->where('plant_id', $user->active_plant_id),
+                'workCenters' => fn ($q) => $q->where('plant_id', $user->active_plant_id),
+            ]);
 
-        // Search
         if ($request->filled('search')) {
-            $query->where('name', 'like', '%'.$request->search.'%');
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', '%'.$search.'%')
+                    ->orWhere('code', 'like', '%'.$search.'%');
+            });
         }
 
-        // Sorting
-        $allowedSorts = ['name', 'employees_count', 'created_at'];
-        $sortBy = in_array($request->get('sort_by'), $allowedSorts) ? $request->get('sort_by') : 'created_at';
-        $sortDir = $request->get('sort_dir') === 'asc' ? 'asc' : 'desc';
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+
+        $allowedSorts = ['name', 'code', 'employees_count', 'work_centers_count', 'status', 'created_at'];
+        $sortBy = in_array($request->get('sort_by'), $allowedSorts) ? $request->get('sort_by') : 'name';
+        $sortDir = $request->get('sort_dir') === 'desc' ? 'desc' : 'asc';
         $query->orderBy($sortBy, $sortDir);
 
         $departments = $query->paginate($perPage)->withQueryString();
 
+        $plantDepartments = Department::query()->forActivePlant($user);
+
+        $reports = [
+            'active' => (clone $plantDepartments)->where('status', 'Active')->count(),
+            'inactive' => (clone $plantDepartments)->where('status', 'Inactive')->count(),
+        ];
+
         return Inertia::render('departments/index', [
             'departments' => $departments,
-            'filters' => $request->only(['search', 'sort_by', 'sort_dir', 'per_page']),
+            'statuses' => Department::STATUSES,
+            'reports' => $reports,
+            'filters' => $request->only(['search', 'status', 'sort_by', 'sort_dir', 'per_page']),
+        ]);
+    }
+
+    /**
+     * Display the specified department.
+     */
+    public function show(Request $request, Department $department)
+    {
+        $user = $request->user();
+        if (! $user || ! $this->departmentBelongsToActivePlant($user, $department)) {
+            abort(403);
+        }
+
+        $department->load(['manager:id,name,email']);
+        $department->loadCount([
+            'employees' => fn ($q) => $q->where('plant_id', $user->active_plant_id),
+            'workCenters' => fn ($q) => $q->where('plant_id', $user->active_plant_id),
+            'machines' => fn ($q) => $q->where('plant_id', $user->active_plant_id),
+        ]);
+
+        return Inertia::render('departments/show', [
+            'department' => $department,
         ]);
     }
 
@@ -55,19 +96,10 @@ class DepartmentController extends Controller
             abort(403);
         }
 
-        $validated = $request->validate([
-            'name' => [
-                'required',
-                'string',
-                'max:255',
-                Rule::unique('departments')
-                    ->where('organization_id', $user->organization_id)
-                    ->where('plant_id', $user->active_plant_id),
-            ],
-        ]);
+        $validated = $this->validateDepartment($request, $user);
 
         Department::create([
-            'name' => $validated['name'],
+            ...$validated,
             'organization_id' => $user->organization_id,
             'plant_id' => $user->active_plant_id,
         ]);
@@ -90,21 +122,13 @@ class DepartmentController extends Controller
             abort(403);
         }
 
-        $validated = $request->validate([
-            'name' => [
-                'required',
-                'string',
-                'max:255',
-                Rule::unique('departments')
-                    ->where('organization_id', $user->organization_id)
-                    ->where('plant_id', $user->active_plant_id)
-                    ->ignore($department->id),
-            ],
-        ]);
+        $validated = $this->validateDepartment($request, $user, $department);
 
-        $department->update([
-            'name' => $validated['name'],
-        ]);
+        if (empty($validated['code'])) {
+            unset($validated['code']);
+        }
+
+        $department->update($validated);
 
         Inertia::flash('toast', [
             'type' => 'success',
@@ -124,10 +148,13 @@ class DepartmentController extends Controller
             abort(403);
         }
 
-        if ($department->employees()->where('plant_id', $user->active_plant_id)->exists()) {
+        $inUse = $department->employees()->where('plant_id', $user->active_plant_id)->exists()
+            || $department->workCenters()->where('plant_id', $user->active_plant_id)->exists();
+
+        if ($inUse) {
             Inertia::flash('toast', [
                 'type' => 'error',
-                'message' => 'Cannot archive this department while employees are still assigned. Reassign them first.',
+                'message' => 'This department is currently in use.',
             ]);
 
             return redirect()->back();
@@ -141,6 +168,48 @@ class DepartmentController extends Controller
         ]);
 
         return redirect()->back();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function validateDepartment(Request $request, $user, ?Department $department = null): array
+    {
+        $request->merge([
+            'manager_id' => $request->filled('manager_id') ? $request->input('manager_id') : null,
+            'code' => $request->filled('code') ? strtoupper(trim((string) $request->input('code'))) : null,
+        ]);
+
+        return $request->validate([
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('departments')
+                    ->where('organization_id', $user->organization_id)
+                    ->where('plant_id', $user->active_plant_id)
+                    ->whereNull('deleted_at')
+                    ->ignore($department?->id),
+            ],
+            'code' => [
+                'nullable',
+                'string',
+                'max:50',
+                Rule::unique('departments', 'code')
+                    ->where('organization_id', $user->organization_id)
+                    ->where('plant_id', $user->active_plant_id)
+                    ->whereNull('deleted_at')
+                    ->ignore($department?->id),
+            ],
+            'description' => ['nullable', 'string', 'max:5000'],
+            'status' => ['required', 'string', Rule::in(Department::STATUSES)],
+            'manager_id' => [
+                'nullable',
+                'integer',
+                Rule::exists('users', 'id')
+                    ->where('organization_id', $user->organization_id),
+            ],
+        ]);
     }
 
     private function departmentBelongsToActivePlant($user, Department $department): bool

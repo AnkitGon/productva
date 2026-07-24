@@ -32,14 +32,16 @@ beforeEach(function () {
         'is_default' => false,
     ]);
 
-    $this->department = Department::create([
+    $this->department = Department::factory()->create([
         'name' => 'Machining',
+        'code' => 'MACH',
         'organization_id' => $this->org->id,
         'plant_id' => $this->plant->id,
     ]);
 
-    $this->otherDepartment = Department::create([
+    $this->otherDepartment = Department::factory()->create([
         'name' => 'Other Machining',
+        'code' => 'MACH',
         'organization_id' => $this->org->id,
         'plant_id' => $this->otherPlant->id,
     ]);
@@ -218,8 +220,9 @@ test('serial number must be unique within the organization when provided', funct
 });
 
 test('work center must belong to the selected department and active plant', function () {
-    $wrongDepartment = Department::create([
+    $wrongDepartment = Department::factory()->create([
         'name' => 'Assembly',
+        'code' => 'ASM',
         'organization_id' => $this->org->id,
         'plant_id' => $this->plant->id,
     ]);

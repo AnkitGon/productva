@@ -146,11 +146,16 @@ class MachineController extends Controller
         $validated = $this->validateMachine($request, $user, $machine);
         $workCenter = WorkCenter::query()->findOrFail($validated['work_center_id']);
 
-        $machine->update([
+        $updateData = [
             ...$validated,
             'department_id' => $workCenter->department_id,
             'updated_by' => $user->id,
-        ]);
+        ];
+        if (empty($updateData['code'])) {
+            unset($updateData['code']);
+        }
+
+        $machine->update($updateData);
 
         Inertia::flash('toast', [
             'type' => 'success',
@@ -195,7 +200,7 @@ class MachineController extends Controller
     private function validateMachine(Request $request, $user, ?Machine $machine = null): array
     {
         $request->merge([
-            'code' => strtoupper(trim((string) $request->input('code', ''))),
+            'code' => $request->filled('code') ? strtoupper(trim((string) $request->input('code'))) : null,
             'manufacturer' => $request->filled('manufacturer') ? $request->input('manufacturer') : null,
             'model' => $request->filled('model') ? $request->input('model') : null,
             'serial_number' => $request->filled('serial_number') ? trim((string) $request->input('serial_number')) : null,
@@ -242,7 +247,7 @@ class MachineController extends Controller
                     ->where('department_id', $request->input('department_id'))
                     ->whereNull('deleted_at'),
             ],
-            'code' => ['required', 'string', 'max:20', $uniqueCode],
+            'code' => ['nullable', 'string', 'max:20', $uniqueCode],
             'name' => ['required', 'string', 'max:100'],
             'manufacturer' => ['nullable', 'string', 'max:100'],
             'model' => ['nullable', 'string', 'max:100'],

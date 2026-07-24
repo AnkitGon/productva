@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('plants', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('organization_id')->constrained('organizations')->onDelete('cascade');
+            $table->foreignId('organization_id')->constrained('organizations')->cascadeOnDelete();
             $table->string('code');
             $table->string('name');
             $table->string('slug');
@@ -26,15 +26,13 @@ return new class extends Migration
             $table->string('country')->nullable();
             $table->string('phone')->nullable();
             $table->string('email')->nullable();
-            $table->string('manager_name')->nullable();
-            $table->string('status')->default('Active'); // Active / Inactive
+            $table->foreignId('manager_id')->nullable()->constrained('users')->nullOnDelete();
+            $table->string('status')->default('Active');
             $table->boolean('is_default')->default(false);
             $table->timestamps();
             $table->softDeletes();
 
-            // Indexes and Unique Constraints
-            $table->unique(['organization_id', 'code']);
-            $table->unique(['organization_id', 'slug']);
+            $table->index('organization_id');
             $table->index('status');
         });
     }

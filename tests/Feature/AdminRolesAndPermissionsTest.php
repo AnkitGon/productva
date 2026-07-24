@@ -3,7 +3,6 @@
 namespace Tests\Feature;
 
 use App\Models\User;
-use App\Models\Role;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -34,6 +33,18 @@ class AdminRolesAndPermissionsTest extends TestCase
         $this->assertTrue($admin->hasRole('admin'));
         $this->assertTrue($admin->hasPermission('admin-dashboard'));
         $this->assertFalse($admin->hasRole('super-admin'));
+
+        $this->assertDatabaseHas('roles', ['slug' => 'plant-manager']);
+        $this->assertDatabaseHas('roles', ['slug' => 'production-manager']);
+        $this->assertDatabaseHas('roles', ['slug' => 'warehouse-manager']);
+        $this->assertDatabaseHas('roles', ['slug' => 'quality-manager']);
+        $this->assertDatabaseHas('roles', ['slug' => 'maintenance-manager']);
+        $this->assertDatabaseHas('roles', ['slug' => 'purchasing-manager']);
+        $this->assertDatabaseHas('roles', ['slug' => 'sales-manager']);
+        $this->assertDatabaseHas('roles', ['slug' => 'finance-manager']);
+        $this->assertDatabaseHas('roles', ['slug' => 'viewer']);
+        $this->assertDatabaseMissing('roles', ['slug' => 'inventory-manager']);
+        $this->assertDatabaseMissing('roles', ['slug' => 'operator']);
     }
 
     public function test_super_admin_can_access_super_admin_dashboard_at_admin_dashboard(): void
@@ -103,6 +114,3 @@ class AdminRolesAndPermissionsTest extends TestCase
         $response->assertStatus(403);
     }
 }
-
-
-

@@ -57,6 +57,7 @@ class ShiftController extends Controller
             'shifts' => $query->paginate($perPage)->withQueryString(),
             'filters' => $request->only(['search', 'status', 'overnight', 'start_time', 'sort_by', 'sort_dir', 'per_page']),
             'templates' => $this->templates(),
+            'colors' => Shift::COLORS,
         ]);
     }
 
@@ -108,7 +109,7 @@ class ShiftController extends Controller
         $validated = $this->validateShift($request, (int) $user->active_plant_id, $shift);
         $this->assertBusinessRules($validated);
 
-        $shift->update([
+        $updateData = [
             ...$validated,
             'working_minutes' => Shift::calculateWorkingMinutes(
                 $validated['start_time'],
@@ -117,7 +118,12 @@ class ShiftController extends Controller
                 (int) $validated['break_minutes'],
             ),
             'updated_by' => $user->id,
-        ]);
+        ];
+        if (empty($updateData['code'])) {
+            unset($updateData['code']);
+        }
+
+        $shift->update($updateData);
 
         Inertia::flash('toast', [
             'type' => 'success',
@@ -174,7 +180,8 @@ class ShiftController extends Controller
             'grace_in_minutes' => $request->filled('grace_in_minutes') ? $request->integer('grace_in_minutes') : 0,
             'grace_out_minutes' => $request->filled('grace_out_minutes') ? $request->integer('grace_out_minutes') : 0,
             'notes' => $request->filled('notes') ? $request->input('notes') : null,
-            'code' => strtoupper(trim((string) $request->input('code', ''))),
+            'code' => $request->filled('code') ? strtoupper(trim((string) $request->input('code'))) : null,
+            'color' => $request->filled('color') ? $request->input('color') : 'blue',
         ]);
 
         $uniqueCode = Rule::unique('shifts', 'code')
@@ -187,7 +194,7 @@ class ShiftController extends Controller
         }
 
         return $request->validate([
-            'code' => ['required', 'string', 'max:20', $uniqueCode],
+            'code' => ['nullable', 'string', 'max:20', $uniqueCode],
             'name' => ['required', 'string', 'max:100'],
             'start_time' => ['required', 'date_format:H:i'],
             'end_time' => ['required', 'date_format:H:i'],
@@ -196,7 +203,8 @@ class ShiftController extends Controller
             'grace_in_minutes' => ['nullable', 'integer', 'min:0', 'max:1440'],
             'grace_out_minutes' => ['nullable', 'integer', 'min:0', 'max:1440'],
             'status' => ['required', Rule::in(['Active', 'Inactive'])],
-            'notes' => ['nullable', 'string', 'max:5000'],
+            'color' => ['required', 'string', Rule::in(Shift::COLORS)],
+            'notes' => ['nullable', 'string', 'max:1000'],
         ]);
     }
 
@@ -240,13 +248,13 @@ class ShiftController extends Controller
 
         if ($graceIn > $duration) {
             throw ValidationException::withMessages([
-                'grace_in_minutes' => 'Grace in cannot exceed the shift duration.',
+                'grace_in_minutes' => 'Late arrival grace cannot exceed the shift duration.',
             ]);
         }
 
         if ($graceOut > $duration) {
             throw ValidationException::withMessages([
-                'grace_out_minutes' => 'Grace out cannot exceed the shift duration.',
+                'grace_out_minutes' => 'Early leave grace cannot exceed the shift duration.',
             ]);
         }
     }
@@ -258,7 +266,7 @@ class ShiftController extends Controller
     }
 
     /**
-     * @return list<array{name: string, code: string, start_time: string, end_time: string, overnight: bool, break_minutes: int}>
+     * @return list<array{name: string, code: string, start_time: string, end_time: string, overnight: bool, break_minutes: int, color: string}>
      */
     private function templates(): array
     {
@@ -270,6 +278,7 @@ class ShiftController extends Controller
                 'end_time' => '14:00',
                 'overnight' => false,
                 'break_minutes' => 60,
+                'color' => 'blue',
             ],
             [
                 'name' => 'Evening Shift',
@@ -278,6 +287,7 @@ class ShiftController extends Controller
                 'end_time' => '22:00',
                 'overnight' => false,
                 'break_minutes' => 60,
+                'color' => 'orange',
             ],
             [
                 'name' => 'Night Shift',
@@ -286,6 +296,7 @@ class ShiftController extends Controller
                 'end_time' => '06:00',
                 'overnight' => true,
                 'break_minutes' => 60,
+                'color' => 'purple',
             ],
             [
                 'name' => 'General Shift',
@@ -294,6 +305,7 @@ class ShiftController extends Controller
                 'end_time' => '18:00',
                 'overnight' => false,
                 'break_minutes' => 60,
+                'color' => 'green',
             ],
         ];
     }

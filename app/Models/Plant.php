@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Plant extends Model
@@ -68,10 +69,75 @@ class Plant extends Model
     }
 
     /**
-     * Get the plant manager user.
+     * Get the plant manager employee.
      */
     public function manager(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'manager_id');
+        return $this->belongsTo(Employee::class, 'manager_id');
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // Child relationships
+    // ──────────────────────────────────────────────────────────────────────────
+
+    public function warehouses(): HasMany
+    {
+        return $this->hasMany(Warehouse::class);
+    }
+
+    public function departments(): HasMany
+    {
+        return $this->hasMany(Department::class);
+    }
+
+    public function employees(): HasMany
+    {
+        return $this->hasMany(Employee::class);
+    }
+
+    public function workCenters(): HasMany
+    {
+        return $this->hasMany(WorkCenter::class);
+    }
+
+    public function machines(): HasMany
+    {
+        return $this->hasMany(Machine::class);
+    }
+
+    public function shifts(): HasMany
+    {
+        return $this->hasMany(Shift::class);
+    }
+
+    public function inventories(): HasMany
+    {
+        return $this->hasMany(Inventory::class);
+    }
+
+    public function routingHeaders(): HasMany
+    {
+        return $this->hasMany(RoutingHeader::class);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // Business rules
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Returns true if the plant is referenced by any child resource in the system.
+     * A plant must NEVER be deleted once it is attached or referenced anywhere.
+     */
+    public function hasBlockingDependencies(): bool
+    {
+        return $this->warehouses()->exists()
+            || $this->departments()->exists()
+            || $this->employees()->exists()
+            || $this->workCenters()->exists()
+            || $this->machines()->exists()
+            || $this->shifts()->exists()
+            || $this->inventories()->exists()
+            || $this->routingHeaders()->exists()
+            || User::where('active_plant_id', $this->id)->exists();
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\AutoGeneratesCode;
 use App\Models\Concerns\BelongsToActivePlant;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -12,7 +13,15 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Shift extends Model
 {
-    use BelongsToActivePlant, HasFactory, SoftDeletes;
+    use AutoGeneratesCode, BelongsToActivePlant, HasFactory, SoftDeletes;
+
+    public const COLORS = [
+        'blue',
+        'orange',
+        'purple',
+        'green',
+        'slate',
+    ];
 
     protected $fillable = [
         'organization_id',
@@ -27,6 +36,7 @@ class Shift extends Model
         'overnight',
         'working_minutes',
         'status',
+        'color',
         'notes',
         'created_by',
         'updated_by',
@@ -42,6 +52,7 @@ class Shift extends Model
         'overnight' => false,
         'working_minutes' => 0,
         'status' => 'Active',
+        'color' => 'blue',
     ];
 
     protected $appends = ['hours_label', 'is_currently_active'];

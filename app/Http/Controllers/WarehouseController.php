@@ -30,7 +30,6 @@ class WarehouseController extends Controller
         $query = Warehouse::query()
             ->forActivePlant($user)
             ->with([
-                'plant:id,name,code',
                 'warehouseType:id,code,name',
                 'manager:id,first_name,last_name,display_name,employee_code,user_id',
                 'manager.user:id,name,email',
@@ -165,10 +164,15 @@ class WarehouseController extends Controller
                     ->update(['is_default' => false]);
             }
 
-            $warehouse->update([
+            $updateData = [
                 ...$validated,
                 'updated_by' => $user->id,
-            ]);
+            ];
+            if (empty($updateData['code'])) {
+                unset($updateData['code']);
+            }
+
+            $warehouse->update($updateData);
         });
 
         Inertia::flash('toast', [
@@ -219,7 +223,7 @@ class WarehouseController extends Controller
     private function validateWarehouse(Request $request, $user, ?Warehouse $warehouse = null): array
     {
         $request->merge([
-            'code' => strtoupper(trim((string) $request->input('code', ''))),
+            'code' => $request->filled('code') ? strtoupper(trim((string) $request->input('code'))) : null,
             'manager_employee_id' => $request->filled('manager_employee_id') ? $request->input('manager_employee_id') : null,
             'phone' => $request->filled('phone') ? $request->input('phone') : null,
             'email' => $request->filled('email') ? $request->input('email') : null,
@@ -256,7 +260,7 @@ class WarehouseController extends Controller
 
         return $request->validate([
             'warehouse_type_id' => ['required', 'integer', $activeType],
-            'code' => ['required', 'string', 'max:50', $uniqueCode],
+            'code' => ['nullable', 'string', 'max:50', $uniqueCode],
             'name' => ['required', 'string', 'max:150'],
             'manager_employee_id' => [
                 'nullable',

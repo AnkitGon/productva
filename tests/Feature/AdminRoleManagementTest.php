@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Organization;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
@@ -47,7 +48,7 @@ class AdminRoleManagementTest extends TestCase
         ]);
 
         $response->assertRedirect();
-        
+
         $role = Role::where('slug', 'custom-staff-role')->first();
         $this->assertNotNull($role);
         $this->assertEquals('Custom Staff Role', $role->name);
@@ -108,7 +109,7 @@ class AdminRoleManagementTest extends TestCase
 
     public function test_non_admin_cannot_access_roles_management(): void
     {
-        $org = \App\Models\Organization::create(['name' => 'Org One']);
+        $org = Organization::create(['name' => 'Org One']);
         $viewerRole = Role::where('slug', 'viewer')->first();
 
         $nonAdmin = User::create([

@@ -44,7 +44,7 @@ beforeEach(function () {
     $this->adminUser->roles()->sync([$adminRole->id]);
 });
 
-it('returns matching users for the active organization and plant', function () {
+it('returns matching users for the active organization regardless of active plant', function () {
     User::create([
         'name' => 'Alice Active',
         'email' => 'alice.active@example.com',
@@ -70,14 +70,14 @@ it('returns matching users for the active organization and plant', function () {
     ]);
 
     $response = $this->actingAs($this->adminUser)->getJson(route('organization.users.search', [
-        'q' => 'Alice',
+        'q' => 'Bob',
     ]));
 
     $response->assertSuccessful();
     $response->assertJsonCount(1);
     $response->assertJsonFragment([
-        'name' => 'Alice Active',
-        'email' => 'alice.active@example.com',
+        'name' => 'Bob Other Plant',
+        'email' => 'bob.otherplant@example.com',
     ]);
 });
 
@@ -87,7 +87,7 @@ it('returns an empty list when no search query is provided', function () {
         'email' => 'alice.active@example.com',
         'password' => bcrypt('password'),
         'organization_id' => $this->org->id,
-        'active_plant_id' => $this->plant->id,
+        'active_plant_id' => null,
     ]);
 
     $response = $this->actingAs($this->adminUser)->getJson(route('organization.users.search'));
@@ -96,13 +96,17 @@ it('returns an empty list when no search query is provided', function () {
     $response->assertExactJson([]);
 });
 
-it('can filter to users that have an employee profile on the active plant', function () {
-    $withEmployee = User::create([
-        'name' => 'Dana Manager',
+it('can search employees on the active plant even without a login', function () {
+    $employee = Employee::create([
+        'employee_code' => 'MGR-01',
+        'first_name' => 'Dana',
+        'last_name' => 'Manager',
         'email' => 'dana.manager@example.com',
-        'password' => bcrypt('password'),
         'organization_id' => $this->org->id,
-        'active_plant_id' => $this->plant->id,
+        'plant_id' => $this->plant->id,
+        'user_id' => null,
+        'employment_type' => 'Full-Time',
+        'status' => 'Active',
     ]);
 
     User::create([
@@ -113,17 +117,6 @@ it('can filter to users that have an employee profile on the active plant', func
         'active_plant_id' => $this->plant->id,
     ]);
 
-    $employee = Employee::create([
-        'employee_code' => 'MGR-01',
-        'first_name' => 'Dana',
-        'last_name' => 'Manager',
-        'organization_id' => $this->org->id,
-        'plant_id' => $this->plant->id,
-        'user_id' => $withEmployee->id,
-        'employment_type' => 'Full-Time',
-        'status' => 'Active',
-    ]);
-
     $response = $this->actingAs($this->adminUser)->getJson(route('organization.users.search', [
         'q' => 'Dana',
         'with_employee' => 1,
@@ -132,9 +125,9 @@ it('can filter to users that have an employee profile on the active plant', func
     $response->assertSuccessful();
     $response->assertJsonCount(1);
     $response->assertJsonFragment([
-        'id' => $withEmployee->id,
         'employee_id' => $employee->id,
         'email' => 'dana.manager@example.com',
+        'name' => 'Dana Manager',
     ]);
 });
 

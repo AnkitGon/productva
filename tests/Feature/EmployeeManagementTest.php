@@ -42,8 +42,9 @@ class EmployeeManagementTest extends TestCase
             'name' => 'Test Plant',
         ]);
 
-        $this->department = Department::create([
+        $this->department = Department::factory()->create([
             'name' => 'Engineering',
+            'code' => 'ENG',
             'organization_id' => $this->org->id,
             'plant_id' => $this->plant->id,
         ]);
@@ -133,18 +134,18 @@ class EmployeeManagementTest extends TestCase
 
     public function test_admin_can_create_employee_with_system_login(): void
     {
-        $operatorRole = Role::where('slug', 'operator')->first();
+        $viewerRole = Role::where('slug', 'viewer')->first();
 
         $response = $this->actingAs($this->adminUser)->post('/employees', [
             'employee_code' => 'EMP-OP-01',
             'first_name' => 'Alice',
             'last_name' => 'Smith',
             'department_id' => $this->department->id,
+            'role_id' => $viewerRole->id,
             'employment_type' => 'Part-Time',
             'status' => 'Active',
             'create_login' => true,
             'login_email' => 'alice@productva.com',
-            'login_role_id' => $operatorRole->id,
             'login_password' => 'password123',
         ]);
 
@@ -153,6 +154,8 @@ class EmployeeManagementTest extends TestCase
         $employee = Employee::where('employee_code', 'EMP-OP-01')->first();
         $this->assertNotNull($employee);
         $this->assertNotNull($employee->user_id);
+        $this->assertSame($viewerRole->id, $employee->role_id);
+        $this->assertTrue($employee->user->hasRole('viewer'));
 
         $this->assertDatabaseHas('users', [
             'id' => $employee->user_id,
@@ -160,7 +163,29 @@ class EmployeeManagementTest extends TestCase
         ]);
     }
 
-    public function test_employee_code_must_be_unique_within_organization(): void
+    public function test_admin_can_assign_role_without_login(): void
+    {
+        $viewerRole = Role::where('slug', 'viewer')->first();
+
+        $response = $this->actingAs($this->adminUser)->post('/employees', [
+            'employee_code' => 'EMP-ROLE-01',
+            'first_name' => 'Role',
+            'last_name' => 'Only',
+            'role_id' => $viewerRole->id,
+            'employment_type' => 'Full-Time',
+            'status' => 'Active',
+            'create_login' => false,
+        ]);
+
+        $response->assertRedirect();
+        $this->assertDatabaseHas('employees', [
+            'employee_code' => 'EMP-ROLE-01',
+            'role_id' => $viewerRole->id,
+            'user_id' => null,
+        ]);
+    }
+
+    public function test_employee_code_must_be_unique_within_plant(): void
     {
         // Create first employee
         Employee::create([
@@ -173,7 +198,7 @@ class EmployeeManagementTest extends TestCase
             'status' => 'Active',
         ]);
 
-        // Attempt duplicate employee code creation
+        // Attempt duplicate employee code creation in the same plant
         $response = $this->actingAs($this->adminUser)->post('/employees', [
             'employee_code' => 'DUP-100',
             'first_name' => 'Alice',
@@ -184,6 +209,46 @@ class EmployeeManagementTest extends TestCase
         ]);
 
         $response->assertSessionHasErrors('employee_code');
+    }
+
+    public function test_employee_code_can_be_reused_in_another_plant(): void
+    {
+        $otherPlant = Plant::create([
+            'organization_id' => $this->org->id,
+            'name' => 'Other Plant',
+            'code' => 'P2',
+            'slug' => 'other-plant',
+            'is_default' => false,
+        ]);
+
+        Employee::create([
+            'employee_code' => 'SHARED-01',
+            'first_name' => 'Alice',
+            'last_name' => 'One',
+            'organization_id' => $this->org->id,
+            'plant_id' => $otherPlant->id,
+            'employment_type' => 'Full-Time',
+            'status' => 'Active',
+        ]);
+
+        $response = $this->actingAs($this->adminUser)->post('/employees', [
+            'employee_code' => 'SHARED-01',
+            'first_name' => 'Bob',
+            'last_name' => 'Two',
+            'employment_type' => 'Full-Time',
+            'status' => 'Active',
+            'create_login' => false,
+        ]);
+
+        $response->assertRedirect();
+        $response->assertSessionDoesntHaveErrors('employee_code');
+
+        $this->assertDatabaseHas('employees', [
+            'employee_code' => 'SHARED-01',
+            'plant_id' => $this->plant->id,
+            'first_name' => 'Bob',
+            'deleted_at' => null,
+        ]);
     }
 
     public function test_admin_can_update_employee(): void
@@ -335,6 +400,89 @@ class EmployeeManagementTest extends TestCase
         // Assert soft deleted
         $this->assertSoftDeleted('employees', [
             'id' => $employee->id,
+        ]);
+    }
+
+    public function test_soft_deleted_employee_code_can_be_reused(): void
+    {
+        $employee = Employee::create([
+            'employee_code' => 'REUSE-01',
+            'first_name' => 'Archived',
+            'last_name' => 'Person',
+            'organization_id' => $this->org->id,
+            'plant_id' => $this->plant->id,
+            'employment_type' => 'Full-Time',
+            'status' => 'Active',
+        ]);
+
+        $employee->delete();
+
+        $response = $this->actingAs($this->adminUser)->post('/employees', [
+            'employee_code' => 'REUSE-01',
+            'first_name' => 'Fresh',
+            'last_name' => 'Hire',
+            'employment_type' => 'Full-Time',
+            'status' => 'Active',
+            'create_login' => false,
+        ]);
+
+        $response->assertRedirect();
+        $response->assertSessionDoesntHaveErrors('employee_code');
+
+        $this->assertDatabaseHas('employees', [
+            'employee_code' => 'REUSE-01',
+            'first_name' => 'Fresh',
+            'last_name' => 'Hire',
+            'deleted_at' => null,
+        ]);
+    }
+
+    public function test_cannot_assign_inactive_department_to_new_employee(): void
+    {
+        $this->department->update(['status' => 'Inactive']);
+
+        $response = $this->actingAs($this->adminUser)->post('/employees', [
+            'employee_code' => 'EMP-INACT-01',
+            'first_name' => 'Inactive',
+            'last_name' => 'Dept',
+            'department_id' => $this->department->id,
+            'employment_type' => 'Full-Time',
+            'status' => 'Active',
+            'create_login' => false,
+        ]);
+
+        $response->assertSessionHasErrors('department_id');
+    }
+
+    public function test_employee_can_keep_inactive_department_on_update(): void
+    {
+        $this->department->update(['status' => 'Inactive']);
+
+        $employee = Employee::create([
+            'employee_code' => 'EMP-KEEP-01',
+            'first_name' => 'Keep',
+            'last_name' => 'Dept',
+            'organization_id' => $this->org->id,
+            'plant_id' => $this->plant->id,
+            'department_id' => $this->department->id,
+            'employment_type' => 'Full-Time',
+            'status' => 'Active',
+        ]);
+
+        $response = $this->actingAs($this->adminUser)->put("/employees/{$employee->id}", [
+            'employee_code' => 'EMP-KEEP-01',
+            'first_name' => 'Keep',
+            'last_name' => 'Updated',
+            'department_id' => $this->department->id,
+            'employment_type' => 'Full-Time',
+            'status' => 'Active',
+        ]);
+
+        $response->assertRedirect();
+        $this->assertDatabaseHas('employees', [
+            'id' => $employee->id,
+            'last_name' => 'Updated',
+            'department_id' => $this->department->id,
         ]);
     }
 }

@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Employee;
 use App\Models\Organization;
 use App\Models\Plant;
 use App\Models\Role;
@@ -252,6 +253,43 @@ test('user can delete a plant when multiple exist', function () {
     expect(Plant::find($plant2->id))->toBeNull();
 });
 
+test('soft deleted plant code and slug can be reused', function () {
+    $org = Organization::create(['name' => 'Org One']);
+
+    $plant1 = Plant::create([
+        'organization_id' => $org->id,
+        'name' => 'Plant 1',
+        'code' => 'P1',
+        'slug' => 'plant-1',
+        'is_default' => true,
+    ]);
+
+    $archived = Plant::create([
+        'organization_id' => $org->id,
+        'name' => 'Archived Plant',
+        'code' => 'REUSE',
+        'slug' => 'reuse-plant',
+        'is_default' => false,
+    ]);
+
+    $user = plantManager($org, $plant1);
+
+    $this->actingAs($user)->delete(route('plants.destroy', ['plant' => $archived->id]))->assertRedirect();
+
+    $response = $this->actingAs($user)->post(route('plants.store'), [
+        'name' => 'Reborn Plant',
+        'code' => 'REUSE',
+        'slug' => 'reuse-plant',
+        'status' => 'Active',
+        'is_default' => false,
+    ]);
+
+    $response->assertRedirect();
+    $response->assertSessionDoesntHaveErrors(['code', 'slug']);
+
+    expect(Plant::where('organization_id', $org->id)->where('code', 'REUSE')->whereNull('deleted_at')->exists())->toBeTrue();
+});
+
 test('user cannot delete the last plant', function () {
     $org = Organization::create(['name' => 'Org One']);
 
@@ -269,4 +307,219 @@ test('user cannot delete the last plant', function () {
 
     $response->assertSessionHasErrors('error');
     expect(Plant::find($plant1->id))->not->toBeNull();
+});
+
+test('user can assign a plant manager from active plant employees without a login', function () {
+    $org = Organization::create(['name' => 'Org One']);
+
+    $plant1 = Plant::create([
+        'organization_id' => $org->id,
+        'name' => 'Plant 1',
+        'code' => 'P1',
+        'slug' => 'plant-1',
+        'is_default' => true,
+    ]);
+
+    $user = plantManager($org, $plant1);
+
+    $manager = Employee::create([
+        'employee_code' => 'MGR-P1',
+        'first_name' => 'Bruno',
+        'last_name' => 'Mcmahon',
+        'email' => 'bruno@example.com',
+        'organization_id' => $org->id,
+        'plant_id' => $plant1->id,
+        'employment_type' => 'Full-Time',
+        'status' => 'Active',
+        'user_id' => null,
+    ]);
+
+    $response = $this->actingAs($user)->post(route('plants.store'), [
+        'name' => 'Plant 3',
+        'code' => 'P3',
+        'slug' => 'plant-3',
+        'status' => 'Active',
+        'is_default' => false,
+        'manager_id' => $manager->id,
+    ]);
+
+    $response->assertRedirect();
+    $response->assertSessionDoesntHaveErrors('manager_id');
+
+    $created = Plant::where('organization_id', $org->id)->where('code', 'P3')->first();
+
+    expect($created)->not->toBeNull()
+        ->and($created->manager_id)->toBe($manager->id);
+});
+
+test('user can update a plant manager from active plant employees', function () {
+    $org = Organization::create(['name' => 'Org One']);
+
+    $plant1 = Plant::create([
+        'organization_id' => $org->id,
+        'name' => 'Plant 1',
+        'code' => 'P1',
+        'slug' => 'plant-1',
+        'is_default' => true,
+    ]);
+
+    $user = plantManager($org, $plant1);
+
+    $manager = Employee::create([
+        'employee_code' => 'MGR-P2',
+        'first_name' => 'Rhea',
+        'last_name' => 'Meyers',
+        'email' => 'rhea@example.com',
+        'organization_id' => $org->id,
+        'plant_id' => $plant1->id,
+        'employment_type' => 'Full-Time',
+        'status' => 'Active',
+        'user_id' => null,
+    ]);
+
+    $response = $this->actingAs($user)->put(route('plants.update', ['plant' => $plant1->id]), [
+        'name' => 'Plant 1',
+        'code' => 'P1',
+        'slug' => 'plant-1',
+        'status' => 'Active',
+        'is_default' => true,
+        'manager_id' => $manager->id,
+    ]);
+
+    $response->assertRedirect();
+    $response->assertSessionDoesntHaveErrors('manager_id');
+
+    expect($plant1->fresh()->manager_id)->toBe($manager->id);
+});
+
+test('plant manager must belong to the same organization', function () {
+    $org = Organization::create(['name' => 'Org One']);
+    $otherOrg = Organization::create(['name' => 'Org Two']);
+
+    $plant1 = Plant::create([
+        'organization_id' => $org->id,
+        'name' => 'Plant 1',
+        'code' => 'P1',
+        'slug' => 'plant-1',
+        'is_default' => true,
+    ]);
+
+    $otherPlant = Plant::create([
+        'organization_id' => $otherOrg->id,
+        'name' => 'Other Plant',
+        'code' => 'OP1',
+        'slug' => 'other-plant',
+        'is_default' => true,
+    ]);
+
+    $user = plantManager($org, $plant1);
+
+    $otherOrgManager = Employee::create([
+        'employee_code' => 'MGR-X',
+        'first_name' => 'Other',
+        'last_name' => 'Org',
+        'organization_id' => $otherOrg->id,
+        'plant_id' => $otherPlant->id,
+        'employment_type' => 'Full-Time',
+        'status' => 'Active',
+    ]);
+
+    $response = $this->actingAs($user)->post(route('plants.store'), [
+        'name' => 'Plant 2',
+        'code' => 'P2',
+        'slug' => 'plant-2',
+        'status' => 'Active',
+        'is_default' => false,
+        'manager_id' => $otherOrgManager->id,
+    ]);
+
+    $response->assertSessionHasErrors('manager_id');
+});
+
+test('plant manager search finds active plant employees without a login', function () {
+    $org = Organization::create(['name' => 'Org One']);
+    $otherOrg = Organization::create(['name' => 'Org Two']);
+
+    $plant1 = Plant::create([
+        'organization_id' => $org->id,
+        'name' => 'Plant 1',
+        'code' => 'P1',
+        'slug' => 'plant-1',
+        'is_default' => true,
+    ]);
+
+    $otherPlant = Plant::create([
+        'organization_id' => $otherOrg->id,
+        'name' => 'Other Plant',
+        'code' => 'OP1',
+        'slug' => 'other-plant',
+        'is_default' => true,
+    ]);
+
+    $user = plantManager($org, $plant1);
+
+    Employee::create([
+        'employee_code' => 'EMP-BRU',
+        'first_name' => 'Bruno',
+        'last_name' => 'Mcmahon',
+        'email' => 'bruno@example.com',
+        'organization_id' => $org->id,
+        'plant_id' => $plant1->id,
+        'employment_type' => 'Full-Time',
+        'status' => 'Active',
+        'user_id' => null,
+    ]);
+
+    Employee::create([
+        'employee_code' => 'EMP-CAR',
+        'first_name' => 'Carol',
+        'last_name' => 'Other',
+        'organization_id' => $otherOrg->id,
+        'plant_id' => $otherPlant->id,
+        'employment_type' => 'Full-Time',
+        'status' => 'Active',
+    ]);
+
+    $response = $this->actingAs($user)->getJson(route('organization.users.search', [
+        'q' => 'bru',
+        'with_employee' => 1,
+    ]));
+
+    $response->assertSuccessful();
+    $response->assertJsonCount(1);
+    $response->assertJsonFragment([
+        'name' => 'Bruno Mcmahon',
+        'email' => 'bruno@example.com',
+    ]);
+});
+
+test('plant manager search returns empty until a query is typed', function () {
+    $org = Organization::create(['name' => 'Org One']);
+
+    $plant1 = Plant::create([
+        'organization_id' => $org->id,
+        'name' => 'Plant 1',
+        'code' => 'P1',
+        'slug' => 'plant-1',
+        'is_default' => true,
+    ]);
+
+    $user = plantManager($org, $plant1);
+
+    Employee::create([
+        'employee_code' => 'EMP-HID',
+        'first_name' => 'Hidden',
+        'last_name' => 'Manager',
+        'organization_id' => $org->id,
+        'plant_id' => $plant1->id,
+        'employment_type' => 'Full-Time',
+        'status' => 'Active',
+    ]);
+
+    $response = $this->actingAs($user)->getJson(route('organization.users.search', [
+        'with_employee' => 1,
+    ]));
+
+    $response->assertSuccessful();
+    $response->assertExactJson([]);
 });

@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Product extends Model
@@ -25,6 +26,31 @@ class Product extends Model
     public const STATUSES = [
         'Active',
         'Inactive',
+        'Obsolete',
+    ];
+
+    public const VALUATION_METHODS = [
+        'FIFO',
+        'LIFO',
+        'Weighted Average',
+        'Standard Cost',
+    ];
+
+    public const ABC_CLASSES = ['A', 'B', 'C'];
+
+    public const XYZ_CLASSES = ['X', 'Y', 'Z'];
+
+    public const TAX_CLASSES = [
+        'None',
+        'GST 5%',
+        'GST 12%',
+        'GST 18%',
+        'GST 28%',
+        'VAT 5%',
+        'VAT 10%',
+        'VAT 20%',
+        'Exempt',
+        'Zero Rated',
     ];
 
     public const BOOLEAN_FIELDS = [
@@ -34,6 +60,7 @@ class Product extends Model
         'make_to_order',
         'bom_required',
         'routing_required',
+        'backflush_material',
         'lot_tracking',
         'serial_tracking',
         'expiry_tracking',
@@ -49,6 +76,7 @@ class Product extends Model
         'uom_id',
         'type',
         'status',
+        // Inventory
         'track_inventory',
         'allow_negative_stock',
         'reorder_level',
@@ -56,25 +84,49 @@ class Product extends Model
         'maximum_stock',
         'safety_stock',
         'lead_time_days',
+        'inventory_valuation_method',
+        'default_warehouse_id',
+        'opening_stock',
+        'opening_cost',
+        'economic_order_quantity',
+        // Manufacturing
         'make_to_stock',
         'make_to_order',
         'bom_required',
         'routing_required',
+        'backflush_material',
+        'manufacturing_uom_id',
+        // Traceability
         'lot_tracking',
         'serial_tracking',
         'expiry_tracking',
+        'shelf_life_days',
+        // Purchasing
         'preferred_supplier_id',
         'supplier_sku',
         'purchase_uom_id',
         'purchase_price',
+        // Sales
         'selling_price',
+        'sales_uom_id',
+        'tax_class',
+        'hsn_sac_code',
+        'default_discount',
         'tax_rate',
         'weight',
         'dimensions',
+        // Media
         'image_path',
         'datasheet_path',
         'safety_sheet_path',
         'technical_drawing_path',
+        // Additional
+        'brand',
+        'manufacturer',
+        'country_of_origin',
+        'abc_classification',
+        'xyz_classification',
+        'notes',
         'created_by',
         'updated_by',
     ];
@@ -84,12 +136,14 @@ class Product extends Model
      */
     protected $attributes = [
         'status' => 'Active',
+        'inventory_valuation_method' => 'FIFO',
         'track_inventory' => true,
         'allow_negative_stock' => false,
         'make_to_stock' => false,
         'make_to_order' => false,
         'bom_required' => false,
         'routing_required' => false,
+        'backflush_material' => false,
         'lot_tracking' => false,
         'serial_tracking' => false,
         'expiry_tracking' => false,
@@ -117,6 +171,7 @@ class Product extends Model
             'make_to_order' => 'boolean',
             'bom_required' => 'boolean',
             'routing_required' => 'boolean',
+            'backflush_material' => 'boolean',
             'lot_tracking' => 'boolean',
             'serial_tracking' => 'boolean',
             'expiry_tracking' => 'boolean',
@@ -124,12 +179,20 @@ class Product extends Model
             'minimum_stock' => 'decimal:4',
             'maximum_stock' => 'decimal:4',
             'safety_stock' => 'decimal:4',
+            'economic_order_quantity' => 'decimal:4',
+            'opening_stock' => 'decimal:4',
+            'opening_cost' => 'decimal:4',
             'lead_time_days' => 'integer',
+            'shelf_life_days' => 'integer',
             'purchase_price' => 'decimal:4',
             'selling_price' => 'decimal:4',
+            'default_discount' => 'decimal:4',
             'tax_rate' => 'decimal:4',
             'weight' => 'decimal:4',
             'preferred_supplier_id' => 'integer',
+            'default_warehouse_id' => 'integer',
+            'manufacturing_uom_id' => 'integer',
+            'sales_uom_id' => 'integer',
         ];
     }
 
@@ -160,6 +223,26 @@ class Product extends Model
     public function purchaseUom(): BelongsTo
     {
         return $this->belongsTo(UnitOfMeasure::class, 'purchase_uom_id');
+    }
+
+    public function salesUom(): BelongsTo
+    {
+        return $this->belongsTo(UnitOfMeasure::class, 'sales_uom_id');
+    }
+
+    public function manufacturingUom(): BelongsTo
+    {
+        return $this->belongsTo(UnitOfMeasure::class, 'manufacturing_uom_id');
+    }
+
+    public function defaultWarehouse(): BelongsTo
+    {
+        return $this->belongsTo(Warehouse::class, 'default_warehouse_id');
+    }
+
+    public function attachments(): HasMany
+    {
+        return $this->hasMany(ProductAttachment::class)->orderBy('type')->orderBy('sort_order');
     }
 
     public function creator(): BelongsTo
@@ -202,11 +285,33 @@ class Product extends Model
         return '/storage/'.ltrim($path, '/');
     }
 
+    public function bomHeaders(): HasMany
+    {
+        return $this->hasMany(BomHeader::class);
+    }
+
+    public function routingHeaders(): HasMany
+    {
+        return $this->hasMany(RoutingHeader::class);
+    }
+
     /**
-     * Placeholder until inventory, BOM, and production modules exist.
+     * Whether this product is referenced by inventory, BOMs, routings, or production.
      */
     public function hasBlockingDependencies(): bool
     {
+        if ($this->bomHeaders()->exists()) {
+            return true;
+        }
+
+        if (BomItem::query()->where('component_product_id', $this->id)->exists()) {
+            return true;
+        }
+
+        if ($this->routingHeaders()->exists()) {
+            return true;
+        }
+
         return false;
     }
 

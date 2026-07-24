@@ -138,7 +138,9 @@ export function PlantDropdown() {
         });
         setManagerLabel(
             plant.manager
-                ? `${plant.manager.name} (${plant.manager.email})`
+                ? plant.manager.user
+                    ? `${plant.manager.user.name} (${plant.manager.user.email})`
+                    : `${plant.manager.first_name} ${plant.manager.last_name}`.trim()
                 : '',
         );
 
@@ -391,7 +393,9 @@ export function PlantDropdown() {
                                     <UserSearchSelect
                                         value={data.manager_id}
                                         selectedLabel={managerLabel}
-                                        placeholder="Search users…"
+                                        placeholder="Search employees…"
+                                        searchPlaceholder="Type to search employees…"
+                                        withEmployee
                                         onChange={(val, option) => {
                                             setData('manager_id', val);
                                             setManagerLabel(option?.label ?? '');

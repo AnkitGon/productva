@@ -282,6 +282,46 @@ export default function MachinesIndex({
             sortable: true,
             render: (row) => <StatusBadge status={row.status} />,
         },
+        {
+            key: 'serial_number',
+            label: 'Serial Number',
+            defaultVisible: false,
+            className: 'text-muted-foreground font-mono text-xs',
+            render: (row) => row.serial_number ?? '—',
+        },
+        {
+            key: 'asset_tag',
+            label: 'Asset Tag',
+            defaultVisible: false,
+            className: 'text-muted-foreground font-mono text-xs',
+            render: (row) => row.asset_tag ?? '—',
+        },
+        {
+            key: 'capacity',
+            label: 'Capacity',
+            defaultVisible: false,
+            className: 'text-muted-foreground',
+            render: (row) => {
+                if (row.capacity === null || row.capacity === undefined || row.capacity === '') {
+                    return '—';
+                }
+                return row.capacity_unit ? `${row.capacity} ${row.capacity_unit}` : String(row.capacity);
+            },
+        },
+        {
+            key: 'installation_date',
+            label: 'Installation Date',
+            defaultVisible: false,
+            className: 'text-muted-foreground text-sm',
+            render: (row) => (row.installation_date ? row.installation_date.slice(0, 10) : '—'),
+        },
+        {
+            key: 'purchase_date',
+            label: 'Purchase Date',
+            defaultVisible: false,
+            className: 'text-muted-foreground text-sm',
+            render: (row) => (row.purchase_date ? row.purchase_date.slice(0, 10) : '—'),
+        },
     ];
 
     const meta: TableMeta = {
@@ -442,7 +482,7 @@ export default function MachinesIndex({
                             {editingMachine ? 'Edit Machine' : 'Add Machine'}
                         </DialogTitle>
                         <DialogDescription className="text-xs text-muted-foreground">
-                            Machines are scoped to the active plant. Choose a department, then a work center in that department.
+                            Choose a department, then a work center in that department.
                         </DialogDescription>
                     </DialogHeader>
 
@@ -493,20 +533,7 @@ export default function MachinesIndex({
                                 <InputError message={form.errors.work_center_id} />
                             </div>
 
-                            <div className="space-y-2">
-                                <Label htmlFor="code">
-                                    Machine Code <span className="text-destructive">*</span>
-                                </Label>
-                                <Input
-                                    id="code"
-                                    value={form.data.code}
-                                    onChange={(e) => form.setData('code', e.target.value.toUpperCase())}
-                                    placeholder="MCH-01"
-                                    maxLength={20}
-                                    required
-                                />
-                                <InputError message={form.errors.code} />
-                            </div>
+
 
                             <div className="space-y-2">
                                 <Label htmlFor="name">

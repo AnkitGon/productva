@@ -4,15 +4,14 @@ namespace App\Actions\Fortify;
 
 use App\Concerns\PasswordValidationRules;
 use App\Concerns\ProfileValidationRules;
-use App\Models\User;
-use Illuminate\Support\Facades\Validator;
-use Laravel\Fortify\Contracts\CreatesNewUsers;
-
 use App\Models\Organization;
 use App\Models\Plant;
-use App\Models\Role;
+use App\Models\User;
+use App\Support\DefaultRoles;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
+use Laravel\Fortify\Contracts\CreatesNewUsers;
 
 class CreateNewUser implements CreatesNewUsers
 {
@@ -32,16 +31,15 @@ class CreateNewUser implements CreatesNewUsers
         ])->validate();
 
         return DB::transaction(function () use ($input) {
-            // 1. Create the Organization
+            $roles = DefaultRoles::ensure();
+
             $organization = Organization::create([
-                'name' => $input['name'] . ' Organization',
+                'name' => $input['name'].' Organization',
             ]);
 
-            // 2. Generate slug and code for the plant
             $slug = Str::slug($input['plant_name']);
             $code = Str::upper(Str::limit(preg_replace('/[^A-Za-z0-9]/', '', $input['plant_name']), 5));
 
-            // 3. Create the Plant
             $plant = Plant::create([
                 'organization_id' => $organization->id,
                 'name' => $input['plant_name'],
@@ -51,7 +49,6 @@ class CreateNewUser implements CreatesNewUsers
                 'is_default' => true,
             ]);
 
-            // 4. Create the User
             $user = User::create([
                 'name' => $input['name'],
                 'email' => $input['email'],
@@ -60,11 +57,7 @@ class CreateNewUser implements CreatesNewUsers
                 'active_plant_id' => $plant->id,
             ]);
 
-            // 5. Assign the Admin Role
-            $adminRole = Role::where('slug', 'admin')->first();
-            if ($adminRole) {
-                $user->roles()->syncWithoutDetaching([$adminRole->id]);
-            }
+            $user->roles()->syncWithoutDetaching([$roles['admin']->id]);
 
             return $user;
         });

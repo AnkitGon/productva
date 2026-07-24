@@ -22,8 +22,9 @@ beforeEach(function () {
         'is_default' => true,
     ]);
 
-    $this->department = Department::create([
+    $this->department = Department::factory()->create([
         'name' => 'Boundary Department',
+        'code' => 'BND',
         'organization_id' => $this->org->id,
         'plant_id' => $this->plant->id,
     ]);
