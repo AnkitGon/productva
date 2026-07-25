@@ -369,8 +369,8 @@ export function RoutingForm({
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
-                                <div className="space-y-2 md:col-span-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                                <div className="space-y-2 col-span-12 sm:col-span-6 lg:col-span-3">
                                     <Label>Operation <span className="text-destructive">*</span></Label>
                                     <Select
                                         value={op.operation_id || undefined}
@@ -387,7 +387,7 @@ export function RoutingForm({
                                     </Select>
                                     <InputError message={opError(index, 'operation_id')} />
                                 </div>
-                                <div className="space-y-2 md:col-span-3">
+                                <div className="space-y-2 col-span-12 sm:col-span-6 lg:col-span-3">
                                     <Label>Work Center <span className="text-destructive">*</span></Label>
                                     <Select
                                         value={op.work_center_id || undefined}
@@ -402,7 +402,7 @@ export function RoutingForm({
                                     </Select>
                                     <InputError message={opError(index, 'work_center_id')} />
                                 </div>
-                                <div className="space-y-2 md:col-span-3">
+                                <div className="space-y-2 col-span-12 sm:col-span-4 lg:col-span-2">
                                     <Label>Machine</Label>
                                     <Select
                                         value={op.machine_id || undefined}
@@ -421,7 +421,7 @@ export function RoutingForm({
                                     </Select>
                                     <InputError message={opError(index, 'machine_id')} />
                                 </div>
-                                <div className="space-y-2 md:col-span-1">
+                                <div className="space-y-2 col-span-12 sm:col-span-4 lg:col-span-2">
                                     <Label>Setup Time</Label>
                                     <Input
                                         type="number"
@@ -432,7 +432,7 @@ export function RoutingForm({
                                     />
                                     <p className="text-[11px] text-muted-foreground">min</p>
                                 </div>
-                                <div className="space-y-2 md:col-span-1">
+                                <div className="space-y-2 col-span-12 sm:col-span-4 lg:col-span-2">
                                     <Label>Run Time <span className="text-destructive">*</span></Label>
                                     <Input
                                         type="number"

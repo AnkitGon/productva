@@ -38,6 +38,8 @@ class Warehouse extends Model
         'is_default',
         'notes',
         'status',
+        'default_receiving_location_id',
+        'default_picking_location_id',
         'created_by',
         'updated_by',
     ];
@@ -97,16 +99,40 @@ class Warehouse extends Model
         return $this->belongsTo(User::class, 'updated_by');
     }
 
+    public function inventories(): HasMany
+    {
+        return $this->hasMany(Inventory::class);
+    }
+
     /**
-     * Placeholder until inventory, bins, transactions, and production references exist.
+     * Returns true if the warehouse has any inventory with positive quantity.
      */
     public function hasBlockingDependencies(): bool
     {
-        return false;
+        return $this->inventories()->where('quantity_on_hand', '>', 0)->exists();
     }
 
+    /**
+     * Returns true if any inventory transactions reference this warehouse.
+     */
     public function hasTransactions(): bool
     {
-        return false;
+        return InventoryTransaction::query()
+            ->where(function ($query) {
+                $query->where('warehouse_id', $this->id)
+                    ->orWhere('from_warehouse_id', $this->id)
+                    ->orWhere('to_warehouse_id', $this->id);
+            })
+            ->exists();
+    }
+
+    public function defaultReceivingLocation(): BelongsTo
+    {
+        return $this->belongsTo(WarehouseLocation::class, 'default_receiving_location_id');
+    }
+
+    public function defaultPickingLocation(): BelongsTo
+    {
+        return $this->belongsTo(WarehouseLocation::class, 'default_picking_location_id');
     }
 }

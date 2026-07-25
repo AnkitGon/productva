@@ -18,6 +18,7 @@ class BomItem extends Model
         'quantity',
         'uom_id',
         'scrap_percentage',
+        'is_phantom',
         'sequence',
         'notes',
     ];
@@ -27,6 +28,7 @@ class BomItem extends Model
      */
     protected $attributes = [
         'scrap_percentage' => 0,
+        'is_phantom' => false,
         'sequence' => 10,
     ];
 
@@ -38,6 +40,7 @@ class BomItem extends Model
         return [
             'quantity' => 'decimal:4',
             'scrap_percentage' => 'decimal:4',
+            'is_phantom' => 'boolean',
             'sequence' => 'integer',
         ];
     }

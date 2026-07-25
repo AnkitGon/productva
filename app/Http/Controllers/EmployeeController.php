@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
 class EmployeeController extends Controller
@@ -340,6 +341,7 @@ class EmployeeController extends Controller
                     $query->where('organization_id', $user->organization_id)
                         ->where('plant_id', $user->active_plant_id)
                         ->whereNull('deleted_at')
+                        ->where('id', '!=', $employee->id)
                         ->where(function ($statusQuery) use ($employee) {
                             $statusQuery->where('status', 'Active');
                             if ($employee->manager_id) {
@@ -347,6 +349,11 @@ class EmployeeController extends Controller
                             }
                         });
                 }),
+                function ($attribute, $value, $fail) use ($employee) {
+                    if ($value && $employee->createsCycle((int) $value)) {
+                        $fail('The selected manager creates a circular reporting hierarchy.');
+                    }
+                },
             ],
             'email' => ['nullable', 'email', 'max:255'],
             'phone' => ['nullable', 'string', 'max:50'],
@@ -374,6 +381,26 @@ class EmployeeController extends Controller
             'photo.mimes' => 'The photo must be a JPG, PNG, or WebP image.',
             'photo.max' => 'The photo must be 2MB or smaller.',
         ]);
+
+        if (array_key_exists('role_id', $validated)) {
+            if ($employee->user && $employee->user->hasRole('admin')) {
+                $targetRoleId = ! empty($validated['role_id']) ? (int) $validated['role_id'] : null;
+                $adminRole = Role::where('slug', 'admin')->first();
+                if (! $adminRole || $targetRoleId !== $adminRole->id) {
+                    $orgAdminCount = User::where('organization_id', $employee->user->organization_id)
+                        ->whereHas('roles', function ($query) {
+                            $query->where('slug', 'admin');
+                        })
+                        ->count();
+
+                    if ($orgAdminCount <= 1) {
+                        throw ValidationException::withMessages([
+                            'role_id' => 'Cannot demote the last admin user of the organization.',
+                        ]);
+                    }
+                }
+            }
+        }
 
         $linkedUserId = $employee->user_id;
 

@@ -54,13 +54,14 @@ export function PlantDropdown() {
     const [editingPlant, setEditingPlant] = useState<any>(null);
     const [deleteConfirmPlantId, setDeleteConfirmPlantId] = useState<number | null>(null);
     const [managerLabel, setManagerLabel] = useState('');
+    const [showInactive, setShowInactive] = useState(false);
 
     if (!auth?.user || !auth.user.plants || auth.user.plants.length === 0) {
         return null;
     }
 
-    const plants = auth.user.plants;
     const activePlantId = auth.user.active_plant_id ? String(auth.user.active_plant_id) : undefined;
+    const plants = auth.user.plants.filter((p) => p.status === 'Active' || String(p.id) === activePlantId || showInactive);
     const currentDefaultPlant = plants.find((p) => p.is_default);
 
     const { data, setData, post, put, processing, errors, reset } = useForm({
@@ -114,7 +115,11 @@ export function PlantDropdown() {
     };
 
     const handleValueChange = (value: string) => {
-        router.post(activate.url(Number(value)));
+        router.post(activate.url(Number(value)), {}, {
+            onSuccess: () => {
+                window.location.reload();
+            }
+        });
     };
 
     const handleEdit = (plant: any) => {
@@ -185,7 +190,7 @@ export function PlantDropdown() {
                     <Button variant="outline" className="w-[200px] h-9 text-sm justify-between px-3" size="sm">
                         <span className="flex items-center truncate">
                             <Factory className="mr-2 h-4 w-4 shrink-0 text-muted-foreground" />
-                            <span className="truncate">{plants.find(p => String(p.id) === activePlantId)?.name || "Select plant..."}</span>
+                            <span className="truncate">{auth.user.plants.find(p => String(p.id) === activePlantId)?.name || "Select plant..."}</span>
                         </span>
                         <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                     </Button>
@@ -195,13 +200,20 @@ export function PlantDropdown() {
                         <div key={plant.id} className="flex items-center justify-between p-1 hover:bg-accent rounded-sm text-sm group">
                             <button
                                 type="button"
+                                disabled={plant.status !== 'Active'}
                                 onClick={() => handleValueChange(String(plant.id))}
                                 className={cn(
-                                    "flex-1 text-left px-2 py-1 truncate cursor-pointer font-medium",
-                                    String(plant.id) === activePlantId && "text-primary"
+                                    "flex-1 text-left px-2 py-1 truncate font-medium",
+                                    plant.status === 'Active' ? "cursor-pointer" : "cursor-not-allowed text-muted-foreground opacity-60",
+                                    String(plant.id) === activePlantId && "text-primary font-semibold"
                                 )}
                             >
-                                {plant.name}
+                                <span className={cn(plant.status !== 'Active' && "line-through opacity-70")}>
+                                    {plant.name}
+                                </span>
+                                {plant.status !== 'Active' && (
+                                    <span className="text-[10px] text-muted-foreground/80 ml-1 font-normal italic">(Inactive)</span>
+                                )}
                             </button>
                             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity pr-1">
                                 {can('plants.update') && (
@@ -214,7 +226,7 @@ export function PlantDropdown() {
                                         <Pencil className="size-3" />
                                     </button>
                                 )}
-                                {can('plants.delete') && plants.length > 1 && (
+                                {can('plants.delete') && auth.user.plants.length > 1 && (
                                     <button
                                         type="button"
                                         onClick={() => handleDelete(plant.id)}
@@ -242,6 +254,33 @@ export function PlantDropdown() {
                                 <Plus className="mr-2 size-4" />
                                 Create new plant
                             </DropdownMenuItem>
+                        </>
+                    )}
+                    {auth.user.plants.some((p) => p.status !== 'Active') && (
+                        <>
+                            <DropdownMenuSeparator />
+                            <div 
+                                className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:bg-accent/40 rounded-sm cursor-pointer select-none"
+                                onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    setShowInactive(!showInactive);
+                                }}
+                            >
+                                <Checkbox
+                                    id="show-inactive-plants"
+                                    checked={showInactive}
+                                    onCheckedChange={(checked) => setShowInactive(checked === true)}
+                                    onClick={(e) => e.stopPropagation()}
+                                />
+                                <label 
+                                    htmlFor="show-inactive-plants" 
+                                    className="cursor-pointer font-medium"
+                                    onClick={(e) => e.stopPropagation()}
+                                >
+                                    Show inactive plants
+                                </label>
+                            </div>
                         </>
                     )}
                 </DropdownMenuContent>

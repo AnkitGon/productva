@@ -150,4 +150,14 @@ class WarehouseLocation extends Model
 
         return false;
     }
+
+    public function inventories(): HasMany
+    {
+        return $this->hasMany(Inventory::class, 'warehouse_location_id');
+    }
+
+    public function hasStock(): bool
+    {
+        return $this->inventories()->where('quantity_on_hand', '>', 0)->exists();
+    }
 }

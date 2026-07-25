@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Inventory;
 use App\Models\InventoryTransaction;
 use App\Models\Product;
+use App\Models\UnitOfMeasure;
 use App\Models\User;
 use App\Models\Warehouse;
 use App\Models\WarehouseLocation;
@@ -45,14 +46,16 @@ class InventoryService
         int $productId,
         ?string $lotNumber = null,
         ?string $serialNumber = null,
+        ?int $plantId = null,
     ): Inventory {
         $lot = $this->normalizeTraceability($lotNumber);
         $serial = $this->normalizeTraceability($serialNumber);
+        $resolvedPlantId = $plantId ?? $user->active_plant_id;
 
         return Inventory::query()->firstOrCreate(
             [
                 'organization_id' => $user->organization_id,
-                'plant_id' => $user->active_plant_id,
+                'plant_id' => $resolvedPlantId,
                 'warehouse_id' => $warehouseId,
                 'warehouse_location_id' => $locationId,
                 'product_id' => $productId,
@@ -85,6 +88,18 @@ class InventoryService
         return DB::transaction(function () use ($user, $data) {
             [$product, $warehouse, $location] = $this->resolveStockTargets($user, $data);
 
+            if ($warehouse->status !== 'Active') {
+                throw ValidationException::withMessages([
+                    'warehouse_id' => 'Cannot adjust stock in an inactive warehouse.',
+                ]);
+            }
+
+            if ($location->status !== 'Active') {
+                throw ValidationException::withMessages([
+                    'warehouse_location_id' => 'Cannot adjust stock in an inactive location.',
+                ]);
+            }
+
             $this->assertTraceability($product, $data['lot_number'] ?? null, $data['serial_number'] ?? null);
 
             $inventory = $this->findOrCreateBalance(
@@ -98,6 +113,14 @@ class InventoryService
 
             $before = (float) $inventory->quantity_on_hand;
             $after = (float) $data['new_quantity'];
+
+            if (isset($data['uom_id']) && (int) $data['uom_id'] !== (int) $product->uom_id) {
+                $transactionUom = UnitOfMeasure::find($data['uom_id']);
+                if ($transactionUom) {
+                    $after = $transactionUom->convertToBase($after);
+                }
+            }
+
             $quantity = $after - $before;
 
             if ($quantity == 0.0) {
@@ -177,25 +200,82 @@ class InventoryService
                 ->where('organization_id', $user->organization_id)
                 ->findOrFail($data['product_id']);
 
+            if (isset($data['uom_id']) && (int) $data['uom_id'] !== (int) $product->uom_id) {
+                $transactionUom = UnitOfMeasure::find($data['uom_id']);
+                if ($transactionUom) {
+                    $quantity = $transactionUom->convertToBase($quantity);
+                }
+            }
+
             $fromWarehouse = Warehouse::query()
+                ->withTrashed()
                 ->where('organization_id', $user->organization_id)
-                ->where('plant_id', $user->active_plant_id)
                 ->findOrFail($data['from_warehouse_id']);
 
+            if ($fromWarehouse->trashed()) {
+                throw ValidationException::withMessages([
+                    'from_warehouse_id' => 'Cannot transfer stock from a deleted warehouse.',
+                ]);
+            }
+
             $fromLocation = WarehouseLocation::query()
+                ->withTrashed()
                 ->where('organization_id', $user->organization_id)
                 ->where('warehouse_id', $fromWarehouse->id)
                 ->findOrFail($data['from_location_id']);
 
+            if ($fromLocation->trashed()) {
+                throw ValidationException::withMessages([
+                    'from_location_id' => 'Cannot transfer stock from a deleted location.',
+                ]);
+            }
+
             $toWarehouse = Warehouse::query()
+                ->withTrashed()
                 ->where('organization_id', $user->organization_id)
-                ->where('plant_id', $user->active_plant_id)
                 ->findOrFail($data['to_warehouse_id']);
 
+            if ($toWarehouse->trashed()) {
+                throw ValidationException::withMessages([
+                    'to_warehouse_id' => 'Cannot transfer stock to a deleted warehouse.',
+                ]);
+            }
+
             $toLocation = WarehouseLocation::query()
+                ->withTrashed()
                 ->where('organization_id', $user->organization_id)
                 ->where('warehouse_id', $toWarehouse->id)
                 ->findOrFail($data['to_location_id']);
+
+            if ($toLocation->trashed()) {
+                throw ValidationException::withMessages([
+                    'to_location_id' => 'Cannot transfer stock to a deleted location.',
+                ]);
+            }
+
+            if ($fromWarehouse->status !== 'Active') {
+                throw ValidationException::withMessages([
+                    'from_warehouse_id' => 'Cannot transfer stock from an inactive warehouse.',
+                ]);
+            }
+
+            if ($toWarehouse->status !== 'Active') {
+                throw ValidationException::withMessages([
+                    'to_warehouse_id' => 'Cannot transfer stock to an inactive warehouse.',
+                ]);
+            }
+
+            if ($fromLocation->status !== 'Active') {
+                throw ValidationException::withMessages([
+                    'from_location_id' => 'Cannot transfer stock from an inactive location.',
+                ]);
+            }
+
+            if ($toLocation->status !== 'Active') {
+                throw ValidationException::withMessages([
+                    'to_location_id' => 'Cannot transfer stock to an inactive location.',
+                ]);
+            }
 
             $this->assertTraceability($product, $data['lot_number'] ?? null, $data['serial_number'] ?? null);
 
@@ -206,6 +286,7 @@ class InventoryService
                 $product->id,
                 $data['lot_number'] ?? null,
                 $data['serial_number'] ?? null,
+                $fromWarehouse->plant_id,
             );
 
             $toInventory = $this->findOrCreateBalance(
@@ -215,7 +296,15 @@ class InventoryService
                 $product->id,
                 $data['lot_number'] ?? null,
                 $data['serial_number'] ?? null,
+                $toWarehouse->plant_id,
             );
+
+            $available = (float) $fromInventory->quantity_on_hand - (float) $fromInventory->quantity_reserved;
+            if ($quantity > $available) {
+                throw ValidationException::withMessages([
+                    'quantity' => 'Transfer quantity cannot exceed available quantity ('.$available.').',
+                ]);
+            }
 
             $fromBefore = (float) $fromInventory->quantity_on_hand;
             $fromAfter = $fromBefore - $quantity;
@@ -314,14 +403,28 @@ class InventoryService
             ->findOrFail($data['product_id']);
 
         $warehouse = Warehouse::query()
+            ->withTrashed()
             ->where('organization_id', $user->organization_id)
             ->where('plant_id', $user->active_plant_id)
             ->findOrFail($data['warehouse_id']);
 
+        if ($warehouse->trashed()) {
+            throw ValidationException::withMessages([
+                'warehouse_id' => 'Cannot adjust stock in a deleted warehouse.',
+            ]);
+        }
+
         $location = WarehouseLocation::query()
+            ->withTrashed()
             ->where('organization_id', $user->organization_id)
             ->where('warehouse_id', $warehouse->id)
             ->findOrFail($data['warehouse_location_id']);
+
+        if ($location->trashed()) {
+            throw ValidationException::withMessages([
+                'warehouse_location_id' => 'Cannot adjust stock in a deleted location.',
+            ]);
+        }
 
         return [$product, $warehouse, $location];
     }
@@ -372,7 +475,7 @@ class InventoryService
 
         return InventoryTransaction::create([
             'organization_id' => $user->organization_id,
-            'plant_id' => $user->active_plant_id,
+            'plant_id' => $warehouse->plant_id,
             'inventory_id' => $inventory->id,
             'product_id' => $product->id,
             'warehouse_id' => $warehouse->id,

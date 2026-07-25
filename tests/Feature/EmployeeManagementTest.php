@@ -485,4 +485,63 @@ class EmployeeManagementTest extends TestCase
             'department_id' => $this->department->id,
         ]);
     }
+
+    public function test_employee_cannot_be_their_own_manager(): void
+    {
+        $employee = Employee::create([
+            'employee_code' => 'EMP-SELF-01',
+            'first_name' => 'Self',
+            'last_name' => 'Manager',
+            'organization_id' => $this->org->id,
+            'plant_id' => $this->plant->id,
+            'employment_type' => 'Full-Time',
+            'status' => 'Active',
+        ]);
+
+        $response = $this->actingAs($this->adminUser)->put("/employees/{$employee->id}", [
+            'employee_code' => 'EMP-SELF-01',
+            'first_name' => 'Self',
+            'last_name' => 'Manager',
+            'manager_id' => $employee->id, // Set self as manager
+            'employment_type' => 'Full-Time',
+            'status' => 'Active',
+        ]);
+
+        $response->assertSessionHasErrors('manager_id');
+    }
+
+    public function test_employee_reports_to_cannot_be_circular(): void
+    {
+        $employeeA = Employee::create([
+            'employee_code' => 'EMP-A',
+            'first_name' => 'Emp',
+            'last_name' => 'A',
+            'organization_id' => $this->org->id,
+            'plant_id' => $this->plant->id,
+            'employment_type' => 'Full-Time',
+            'status' => 'Active',
+        ]);
+
+        $employeeB = Employee::create([
+            'employee_code' => 'EMP-B',
+            'first_name' => 'Emp',
+            'last_name' => 'B',
+            'manager_id' => $employeeA->id,
+            'organization_id' => $this->org->id,
+            'plant_id' => $this->plant->id,
+            'employment_type' => 'Full-Time',
+            'status' => 'Active',
+        ]);
+
+        $response = $this->actingAs($this->adminUser)->put("/employees/{$employeeA->id}", [
+            'employee_code' => 'EMP-A',
+            'first_name' => 'Emp',
+            'last_name' => 'A',
+            'manager_id' => $employeeB->id,
+            'employment_type' => 'Full-Time',
+            'status' => 'Active',
+        ]);
+
+        $response->assertSessionHasErrors('manager_id');
+    }
 }

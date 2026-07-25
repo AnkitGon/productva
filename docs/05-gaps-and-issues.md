@@ -130,12 +130,7 @@ No in-app notifications, no email alerts. Users have no way to be alerted about:
 
 ---
 
-### H-08: Plant Cannot Be Switched Without Refresh
-When a user switches their active plant, some UI elements may not reactively update without a full page refresh. The plant context switch is sent as a POST, but the sidebar and breadcrumbs don't always re-render.
-
----
-
-### H-09: Dashboard Placeholder Is Not Removed on Navigation
+### H-08: Dashboard Placeholder Is Not Removed on Navigation
 When logged in as Super Admin and redirected to `/admin/dashboard`, this also shows a placeholder pattern with only the text "Welcome to your plant dashboard." No data, no value.
 
 ---
@@ -192,8 +187,8 @@ Only products can be bulk-imported from CSV. Opening balances and inventory adju
 
 ---
 
-### M-10: Employee Manager Chain Has No Cycle Detection
-The `manager_id` field on employees creates a reports-to chain. There is no validation to prevent circular references (Employee A reports to Employee B who reports to Employee A). Inactive employees are excluded from assignable pickers but can still be stored as managers if previously assigned.
+### M-10: Employee Manager Chain Has No Cycle Detection (RESOLVED)
+The `manager_id` field on employees creates a reports-to chain. We have implemented cycle detection to prevent circular references (e.g., Employee A reports to Employee B who reports to Employee A) during profile creation/update validation.
 
 ---
 
@@ -212,13 +207,13 @@ BOM items can be flagged as `is_phantom` but this flag has no processing logic. 
 
 ---
 
-### M-14: Soft-Delete Does Not Cascade Properly
-When a warehouse is soft-deleted, its locations and inventory records remain active. If a user tries to do an adjustment to a location in a deleted warehouse, the system may allow it. Cascade soft-delete or validation is needed.
+### M-14: Soft-Delete Does Not Cascade Properly (RESOLVED)
+We have implemented explicit soft-delete validations using `withTrashed()` inside `InventoryService` to prevent stock movements (adjustments and transfers) in deleted warehouses or locations.
 
 ---
 
-### M-15: No Inter-Plant Transfer
-Stock can be transferred between locations within the same plant. There is no workflow to transfer stock between two plants (e.g., Plant A sends 500 units of RM001 to Plant B). This is a common requirement in multi-plant manufacturing.
+### M-15: No Inter-Plant Transfer (RESOLVED)
+We have enabled inter-plant transfers by resolving destination warehouse/location balances and transactions to their respective target plant IDs instead of restricting them to the active user's active plant ID.
 
 ---
 

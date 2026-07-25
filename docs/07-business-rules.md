@@ -58,7 +58,7 @@ High-level view of the 22 operational domains. Detail tables follow in later sec
 | P-2 | A plant cannot be deleted once referenced (warehouses, departments, employees, work centers, machines, shifts, inventory, routings) | ✅ | `Plant::hasBlockingDependencies()` |
 | P-3 | A plant with users whose `active_plant_id` points to it cannot be deleted | ✅ | `Plant::hasBlockingDependencies()` |
 | P-4 | Only one default plant per organization | ✅ | `Plant::booted()` |
-| P-5 | Inactive plants hidden from active plant selector | ❌ | Inactive plants still appear in `plant-dropdown.tsx` |
+| P-5 | Inactive plants hidden from active plant selector | ✅ | `plant-dropdown.tsx` |
 | P-6 | Plant name change updates displays without breaking FK references | ✅ | Name is display field; IDs unchanged |
 | P-7 | Company (organization) isolation on all plant queries | ✅ | Controllers scope by `organization_id` |
 
@@ -67,9 +67,9 @@ High-level view of the 22 operational domains. Detail tables follow in later sec
 | # | Rule | Status | Location |
 |---|------|--------|----------|
 | W-1 | Warehouse belongs to a plant | ✅ | FK + validation |
-| W-2 | Warehouse cannot be deleted if inventory exists | ❌ | `Warehouse::hasBlockingDependencies()` returns `false` (stub) |
-| W-3 | Warehouse cannot be changed if transactions exist | ❌ | `hasTransactions()` stub returns `false` |
-| W-4 | Warehouse status respected in transactions | ❌ | No status check on adjust/transfer |
+| W-2 | Warehouse cannot be deleted if inventory exists | ✅ | `Warehouse::hasBlockingDependencies()` |
+| W-3 | Warehouse cannot be changed if transactions exist | ✅ | `Warehouse::hasTransactions()` check in `WarehouseController` |
+| W-4 | Warehouse status respected in transactions | ✅ | `InventoryService` checks on adjust/transfer |
 | W-5 | Only one default warehouse per plant enforced on save | ✅ | `WarehouseController` clears other defaults |
 | W-6 | Warehouse and locations share the same plant | ✅ | Denormalized `plant_id` on locations |
 
@@ -79,17 +79,17 @@ High-level view of the 22 operational domains. Detail tables follow in later sec
 |---|------|--------|----------|
 | BL-1 | Bin belongs to the correct warehouse / plant | ✅ | `WarehouseLocationController::validateLocation()` |
 | BL-2 | Duplicate bin codes prevented within a warehouse | ✅ | Soft-delete-aware unique on `(warehouse_id, code)` |
-| BL-3 | Bin with stock cannot be deleted | ❌ | Delete blocked only when child locations exist |
+| BL-3 | Bin with stock cannot be deleted | ✅ | `WarehouseLocationController::destroy()` via `hasStock()` |
 | BL-4 | Parent/child hierarchy cannot be circular | ✅ | `WarehouseLocation::isDescendantOf()` |
-| BL-5 | Default receiving/picking bins | ❌ | Fields not implemented |
-| BL-6 | Location status affects transactions | ❌ | Not validated on stock movement |
+| BL-5 | Default receiving/picking bins | ✅ | `Warehouse` model, migration & UI inputs |
+| BL-6 | Location status affects transactions | ✅ | `InventoryService` checks on adjust/transfer |
 
 ### Departments
 
 | # | Rule | Status | Location |
 |---|------|--------|----------|
 | D-1 | Department cannot be deleted if employees or work centers assigned | ✅ | `DepartmentController::destroy()` |
-| D-2 | Inactive department prevents new employee assignments | ❌ | Status stored but not validated on assign |
+| D-2 | Inactive department prevents new employee assignments | ✅ | `EmployeeController` validation on store/update |
 | D-3 | Department belongs to active plant context | ✅ | Plant-scoped queries |
 
 ### Employees
@@ -102,8 +102,8 @@ High-level view of the 22 operational domains. Detail tables follow in later sec
 | E-4 | Inactive employees excluded from assignment pickers | ✅ | `Employee::scopeAssignable()` |
 | E-5 | Inactive employees cannot receive new work orders | ⏳ | Work orders not built; assignable scope ready |
 | E-6 | Role permissions enforced on actions | ✅ | `CheckPermission` middleware |
-| E-7 | Employee cannot be their own manager | ❌ | Not validated |
-| E-8 | Circular manager chain rejected | ❌ | Gap M-10 |
+| E-7 | Employee cannot be their own manager | ✅ | `EmployeeController::update()` validation |
+| E-8 | Circular manager chain rejected | ✅ | `Employee::createsCycle()` check in `EmployeeController` |
 | E-9 | Terminated/inactive employee not assignable as plant/department manager | 🔧 | Assignable scope covers pickers; manager FK not fully guarded |
 | E-10 | Hard delete blocked when operational history exists | 🔧 | `hasOperationalHistory()` stub returns `false` until production/QC modules ship |
 
@@ -130,9 +130,9 @@ High-level view of the 22 operational domains. Detail tables follow in later sec
 | PR-15 | Product bundles / kits | ❌ | Not built |
 | PR-16 | Duplicate prevention on import | ✅ | SKU/barcode checks in CSV import |
 | PR-17 | Product cannot be deleted once referenced in BOM/routing | ✅ | `Product::hasBlockingDependencies()` |
-| PR-18 | Product with inventory cannot be hard-deleted | ❌ | Inventory not in `hasBlockingDependencies()` (UI message implies it is) |
+| PR-18 | Product with inventory cannot be hard-deleted | ✅ | `Product::hasBlockingDependencies()` checks stock & transactions |
 | PR-19 | Stock level hierarchy: Maximum ≥ Minimum ≥ Safety ≤ Reorder | ✅ | `ProductController::stockLevelValidationErrors()` |
-| PR-20 | Opening stock / opening cost captured on product | 🔧 | Stored on product; **does not auto-post** to inventory ledger |
+| PR-20 | Opening stock / opening cost captured on product | ✅ | `ProductController::postOpeningStock()` auto-posts Opening Balance |
 | PR-21 | Bulk actions: activate, deactivate, category, warehouse, delete, export | ✅ | `ProductController::bulk()` |
 
 ### Product Categories
@@ -150,7 +150,7 @@ High-level view of the 22 operational domains. Detail tables follow in later sec
 |---|------|--------|----------|
 | UOM-1 | UOM code unique per organization | ✅ | Soft-delete-aware index |
 | UOM-2 | UOM name unique per organization | ✅ | Validation in `UnitOfMeasureController` |
-| UOM-3 | UOM conversion on transactions | ❌ | `conversion_factor` not applied |
+| UOM-3 | UOM conversion on transactions | ✅ | `InventoryService` converts transaction qty to base UOM |
 
 ---
 
@@ -162,13 +162,13 @@ High-level view of the 22 operational domains. Detail tables follow in later sec
 | B-2 | Same child not duplicated in one BOM | ✅ | Duplicate component check in `BomService` |
 | B-3 | Quantities must be > 0 | ✅ | Validation |
 | B-4 | UOM per line validated against org | ✅ | `BomService` |
-| B-5 | UOM conversion at explosion time | ❌ | Not built (no production explosion) |
+| B-5 | UOM conversion at explosion time | ✅ | `BomHeader::explode()` converts component quantities to base UOM |
 | B-6 | Effective dates (effective_from / effective_to) | 🔧 | Stored; auto-obsolete on date not enforced |
 | B-7 | Revision / version handling | ✅ | Version field + copy BOM |
 | B-8 | Only one default BOM per product | ✅ | `BomService` clears other defaults |
 | B-9 | BOM activation / deactivation by status | 🔧 | Status field; edit not blocked by Active status |
 | B-10 | BOM cannot be deleted after production use | ⏳ | Production orders not built |
-| B-11 | Phantom item processing | ❌ | `is_phantom` stored; no MRP logic |
+| B-11 | Phantom item processing | ✅ | `BomHeader::explode()` recursive explosion for phantom items |
 
 ---
 
@@ -179,7 +179,7 @@ High-level view of the 22 operational domains. Detail tables follow in later sec
 | R-1 | Work center sequence on operations | ✅ | Sequence field; unique on release |
 | R-2 | Estimated / run time captured | ✅ | Operation times on routing lines |
 | R-3 | Machine assignment validated against work center | ✅ | `RoutingService` release gate |
-| R-4 | Alternate routing | ❌ | Single routing per product/plant version set |
+| R-4 | Alternate routing | ✅ | Multiple routings per product allowed using `is_primary` and `routing_name` |
 | R-5 | Revision / version support | ✅ | Version + copy routing |
 | R-6 | Released routing cannot be edited | ✅ | `RoutingHeader::is_editable`; controller guard |
 | R-7 | Only one default routing per product per plant | ✅ | `RoutingService` |
@@ -198,7 +198,7 @@ High-level view of the 22 operational domains. Detail tables follow in later sec
 | I-2 | Reservations respected (reserved ≤ on-hand) | 🔧 | Validated on adjustment; no reservation workflow |
 | I-3 | Available quantity = on-hand − reserved | ✅ | `Inventory` accessor |
 | I-4 | On-hand, reserved quantities maintained | ✅ | `inventories` table |
-| I-5 | Incoming / outgoing quantity fields | ❌ | Not modeled separately |
+| I-5 | Incoming / outgoing quantity fields | ✅ | `quantity_incoming` and `quantity_outgoing` fields on `inventories` |
 | I-6 | Lot tracking on transactions | 🔧 | Fields on transaction; optional capture only |
 | I-7 | Serial tracking on transactions | 🔧 | Fields on transaction; uniqueness not enforced |
 | I-8 | Bin transfers (within plant) | ✅ | Transfer between locations |
@@ -206,10 +206,10 @@ High-level view of the 22 operational domains. Detail tables follow in later sec
 | I-10 | Inventory adjustments | ✅ | `InventoryService::adjust()` |
 | I-11 | Audit trail / transaction history | ✅ | Immutable `inventory_transactions` |
 | I-12 | Every movement creates a transaction record | ✅ | `InventoryService` |
-| I-13 | Transfer cannot exceed available (on-hand − reserved) | ❌ | Validates qty > 0 and negative-stock rules only |
-| I-14 | Stock in deleted warehouse/location cannot move | ❌ | Existence check only; `deleted_at` not checked |
+| I-13 | Transfer cannot exceed available (on-hand − reserved) | ✅ | `InventoryService::transfer()` checks available quantity |
+| I-14 | Stock in deleted warehouse/location cannot move | ✅ | `InventoryService` checks `withTrashed()` and blocks moves if trashed |
 | I-15 | Transaction numbers unique per org | ✅ | `InventoryService::nextTransactionNo()` |
-| I-16 | Inter-plant transfer | ❌ | Gap M-15 |
+| I-16 | Inter-plant transfer | ✅ | `InventoryService::transfer()` allows inter-plant warehouse transfers |
 
 ---
 
@@ -257,8 +257,8 @@ When built, each workflow must create the corresponding `inventory_transaction` 
 | U-8 | Password policies beyond Fortify defaults | 🔧 | Fortify rules only |
 | U-9 | Session timeout | 🔧 | Laravel session config |
 | U-10 | Multi-company isolation | ✅ | Organization scoping |
-| U-11 | User cannot delete own account | ❌ | Not validated |
-| U-12 | Last org admin cannot be demoted | ❌ | Not enforced |
+| U-11 | User cannot delete own account | ✅ | `UserController::destroy()` own account check |
+| U-12 | Last org admin cannot be demoted | ✅ | `EmployeeController::update()` and `UserController::destroy()` protect last admin |
 
 ---
 

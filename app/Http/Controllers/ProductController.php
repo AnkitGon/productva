@@ -2,11 +2,15 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Inventory;
+use App\Models\InventoryTransaction;
 use App\Models\Product;
 use App\Models\ProductAttachment;
 use App\Models\ProductCategory;
 use App\Models\UnitOfMeasure;
 use App\Models\Warehouse;
+use App\Models\WarehouseLocation;
+use App\Services\InventoryService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
@@ -184,6 +188,8 @@ class ProductController extends Controller
 
         $this->storeNewAttachments($request, $product, $user);
 
+        $this->postOpeningStock($user, $product);
+
         Inertia::flash('toast', [
             'type' => 'success',
             'message' => 'Product created successfully.',
@@ -269,6 +275,8 @@ class ProductController extends Controller
         }
 
         $this->storeNewAttachments($request, $product, $user);
+
+        $this->postOpeningStock($user, $product);
 
         Inertia::flash('toast', [
             'type' => 'success',
@@ -1141,5 +1149,105 @@ class ProductController extends Controller
                 'created_by' => $user->id,
             ]);
         }
+    }
+
+    protected function postOpeningStock($user, Product $product): void
+    {
+        if (! $product->track_inventory || (float) $product->opening_stock <= 0) {
+            return;
+        }
+
+        $warehouseId = $product->default_warehouse_id;
+        $warehouse = null;
+        if ($warehouseId) {
+            $warehouse = Warehouse::find($warehouseId);
+        }
+
+        if (! $warehouse) {
+            $warehouse = Warehouse::where('plant_id', $user->active_plant_id)
+                ->where('status', 'Active')
+                ->where('is_default', true)
+                ->first() ?? Warehouse::where('plant_id', $user->active_plant_id)->where('status', 'Active')->first();
+        }
+
+        if (! $warehouse) {
+            return;
+        }
+
+        $locationId = $warehouse->default_receiving_location_id ?? $warehouse->default_picking_location_id;
+        $location = null;
+        if ($locationId) {
+            $location = WarehouseLocation::find($locationId);
+        }
+
+        if (! $location) {
+            $location = WarehouseLocation::where('warehouse_id', $warehouse->id)->where('status', 'Active')->first();
+        }
+
+        if (! $location) {
+            $location = WarehouseLocation::create([
+                'organization_id' => $product->organization_id,
+                'warehouse_id' => $warehouse->id,
+                'type' => 'Bin',
+                'code' => 'DEFAULT',
+                'name' => 'Default Location',
+                'status' => 'Active',
+                'created_by' => $user->id,
+                'updated_by' => $user->id,
+            ]);
+        }
+
+        $exists = InventoryTransaction::where('product_id', $product->id)
+            ->where('transaction_type', 'Opening Balance')
+            ->exists();
+
+        if ($exists) {
+            return;
+        }
+
+        $inventory = Inventory::firstOrCreate([
+            'organization_id' => $product->organization_id,
+            'plant_id' => $warehouse->plant_id,
+            'warehouse_id' => $warehouse->id,
+            'warehouse_location_id' => $location->id,
+            'product_id' => $product->id,
+            'lot_number' => '',
+            'serial_number' => '',
+        ], [
+            'quantity_on_hand' => 0,
+            'quantity_reserved' => 0,
+        ]);
+
+        $before = (float) $inventory->quantity_on_hand;
+        $after = $before + (float) $product->opening_stock;
+
+        $inventory->update([
+            'quantity_on_hand' => $after,
+            'last_movement_at' => now(),
+        ]);
+
+        $transactionNo = app(InventoryService::class)->nextTransactionNo((int) $product->organization_id, 'OPN');
+
+        InventoryTransaction::create([
+            'organization_id' => $product->organization_id,
+            'plant_id' => $warehouse->plant_id,
+            'warehouse_id' => $warehouse->id,
+            'warehouse_location_id' => $location->id,
+            'inventory_id' => $inventory->id,
+            'product_id' => $product->id,
+            'transaction_type' => 'Opening Balance',
+            'quantity' => (float) $product->opening_stock,
+            'quantity_before' => $before,
+            'quantity_after' => $after,
+            'unit_cost' => (float) ($product->opening_cost ?? 0.0),
+            'total_cost' => (float) ($product->opening_stock * ($product->opening_cost ?? 0.0)),
+            'reference_number' => 'OP-'.$product->sku,
+            'notes' => 'Auto-posted opening balance from product creation.',
+            'created_by' => $user->id,
+            'transaction_no' => $transactionNo,
+            'lot_number' => '',
+            'serial_number' => '',
+            'transacted_at' => now(),
+        ]);
     }
 }

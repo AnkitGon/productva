@@ -295,6 +295,11 @@ class Product extends Model
         return $this->hasMany(RoutingHeader::class);
     }
 
+    public function inventories(): HasMany
+    {
+        return $this->hasMany(Inventory::class);
+    }
+
     /**
      * Whether this product is referenced by inventory, BOMs, routings, or production.
      */
@@ -309,6 +314,14 @@ class Product extends Model
         }
 
         if ($this->routingHeaders()->exists()) {
+            return true;
+        }
+
+        if ($this->inventories()->where('quantity_on_hand', '>', 0)->exists()) {
+            return true;
+        }
+
+        if (InventoryTransaction::query()->where('product_id', $this->id)->exists()) {
             return true;
         }
 

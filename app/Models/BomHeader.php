@@ -87,4 +87,56 @@ class BomHeader extends Model
     {
         return $this->belongsTo(User::class, 'updated_by');
     }
+
+    public function explode(float $quantity = 1.0): array
+    {
+        $results = [];
+        $this->explodeRecursive($this, $quantity, $results);
+
+        return array_values($results);
+    }
+
+    protected function explodeRecursive(BomHeader $bom, float $parentQty, array &$results): void
+    {
+        foreach ($bom->items()->with('component')->get() as $item) {
+            $product = $item->component;
+            if (! $product) {
+                continue;
+            }
+
+            $itemQty = (float) $item->quantity;
+            $requiredQty = $itemQty * $parentQty;
+
+            if ((int) $item->uom_id !== (int) $product->uom_id) {
+                $itemUom = UnitOfMeasure::find($item->uom_id);
+                if ($itemUom) {
+                    $requiredQty = $itemUom->convertToBase($requiredQty);
+                }
+            }
+
+            if ($item->is_phantom) {
+                $subBom = self::where('product_id', $product->id)
+                    ->where('status', 'Active')
+                    ->first();
+
+                if ($subBom) {
+                    $this->explodeRecursive($subBom, $requiredQty, $results);
+
+                    continue;
+                }
+            }
+
+            $key = $product->id.'_'.$product->uom_id;
+            if (isset($results[$key])) {
+                $results[$key]['quantity'] += $requiredQty;
+            } else {
+                $results[$key] = [
+                    'product_id' => $product->id,
+                    'product' => $product,
+                    'quantity' => $requiredQty,
+                    'uom_id' => $product->uom_id,
+                ];
+            }
+        }
+    }
 }

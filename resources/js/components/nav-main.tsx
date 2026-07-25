@@ -36,7 +36,7 @@ export function NavMain({ groups = [] }: { groups: NavGroup[] }) {
                             className={cn('px-2 py-0', index === 0 ? 'pt-1' : 'pt-0')}
                         >
                             {index > 0 ? (
-                                <div className="mx-2.5 mb-1 mt-3 h-px bg-sidebar-border/70" />
+                                <div className="mx-2.5 mb-1 mt-1 h-px bg-sidebar-border/70" />
                             ) : null}
                             <SidebarMenu className="gap-0">
                                 <Collapsible

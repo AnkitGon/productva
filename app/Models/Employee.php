@@ -157,4 +157,23 @@ class Employee extends Model
     {
         return $this->hasMany(Employee::class, 'manager_id');
     }
+
+    public function createsCycle(int $candidateManagerId): bool
+    {
+        if ($this->id === $candidateManagerId) {
+            return true;
+        }
+
+        $manager = self::find($candidateManagerId);
+        $guard = 0;
+        while ($manager && $guard < 100) {
+            if ($manager->id === $this->id) {
+                return true;
+            }
+            $manager = $manager->manager;
+            $guard++;
+        }
+
+        return false;
+    }
 }

@@ -1,5 +1,7 @@
 <?php
 
+use App\Models\Inventory;
+use App\Models\InventoryTransaction;
 use App\Models\Organization;
 use App\Models\Permission;
 use App\Models\Plant;
@@ -9,6 +11,7 @@ use App\Models\Role;
 use App\Models\UnitOfMeasure;
 use App\Models\User;
 use App\Models\Warehouse;
+use App\Models\WarehouseLocation;
 use App\Models\WarehouseType;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Http\UploadedFile;
@@ -574,4 +577,75 @@ test('view-only users cannot mutate products', function () {
     $this->actingAs($viewer)->post(route('products.import'), [
         'file' => UploadedFile::fake()->create('products.csv', 10, 'text/csv'),
     ])->assertForbidden();
+});
+
+test('product business rules: PR-18, PR-20', function () {
+    $plant = Plant::create([
+        'organization_id' => $this->org->id,
+        'code' => 'PL1',
+        'slug' => 'plant-1',
+        'name' => 'Plant 1',
+    ]);
+    $this->admin->update(['active_plant_id' => $plant->id]);
+
+    WarehouseType::ensureDefaultsFor($this->org->id);
+    $typeId = WarehouseType::where('organization_id', $this->org->id)->value('id');
+
+    $warehouse = Warehouse::create([
+        'organization_id' => $this->org->id,
+        'plant_id' => $plant->id,
+        'warehouse_type_id' => $typeId,
+        'code' => 'TEST-WH-PR',
+        'name' => 'Test WH PR',
+        'status' => 'Active',
+        'created_by' => $this->admin->id,
+        'updated_by' => $this->admin->id,
+    ]);
+
+    $location = WarehouseLocation::create([
+        'organization_id' => $this->org->id,
+        'warehouse_id' => $warehouse->id,
+        'type' => 'Bin',
+        'code' => 'BIN-PR',
+        'name' => 'Bin PR',
+        'status' => 'Active',
+        'created_by' => $this->admin->id,
+        'updated_by' => $this->admin->id,
+    ]);
+
+    $this->actingAs($this->admin)
+        ->post(route('products.store'), [
+            'sku' => 'SKU-OPENING-STOCK',
+            'name' => 'Opening Stock Product',
+            'category_id' => $this->category->id,
+            'uom_id' => $this->uom->id,
+            'type' => 'Raw Material',
+            'status' => 'Active',
+            'track_inventory' => true,
+            'default_warehouse_id' => $warehouse->id,
+            'opening_stock' => 15,
+            'opening_cost' => 10,
+        ])
+        ->assertRedirect(route('products.index'));
+
+    $product = Product::where('sku', 'SKU-OPENING-STOCK')->firstOrFail();
+    expect($product->opening_stock)->toEqual(15.0);
+    expect((float) $product->opening_cost)->toEqual(10.0);
+
+    $inventory = Inventory::where('product_id', $product->id)->first();
+    expect($inventory)->not->toBeNull();
+    expect((float) $inventory->quantity_on_hand)->toBe(15.0);
+
+    $transaction = InventoryTransaction::where('product_id', $product->id)->first();
+    expect($transaction)->not->toBeNull();
+    expect($transaction->transaction_type)->toBe('Opening Balance');
+    expect((float) $transaction->quantity)->toBe(15.0);
+
+    $this->actingAs($this->admin)
+        ->delete(route('products.destroy', $product))
+        ->assertRedirect();
+
+    $product = $product->fresh();
+    expect($product->deleted_at)->toBeNull();
+    expect($product->status)->toBe('Inactive');
 });

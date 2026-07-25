@@ -27,6 +27,8 @@ class RoutingHeader extends Model
         'product_id',
         'version',
         'is_default',
+        'is_primary',
+        'routing_name',
         'effective_from',
         'effective_to',
         'status',
@@ -40,6 +42,7 @@ class RoutingHeader extends Model
      */
     protected $attributes = [
         'is_default' => false,
+        'is_primary' => true,
         'status' => 'Draft',
     ];
 
@@ -57,6 +60,7 @@ class RoutingHeader extends Model
     {
         return [
             'is_default' => 'boolean',
+            'is_primary' => 'boolean',
             'effective_from' => 'date',
             'effective_to' => 'date',
         ];

@@ -4,10 +4,12 @@ namespace App\Http\Controllers;
 
 use App\Models\Employee;
 use App\Models\Warehouse;
+use App\Models\WarehouseLocation;
 use App\Models\WarehouseType;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
 class WarehouseController extends Controller
@@ -33,6 +35,8 @@ class WarehouseController extends Controller
                 'warehouseType:id,code,name',
                 'manager:id,first_name,last_name,display_name,employee_code,user_id',
                 'manager.user:id,name,email',
+                'defaultReceivingLocation:id,code,name',
+                'defaultPickingLocation:id,code,name',
             ]);
 
         if ($request->filled('search')) {
@@ -88,10 +92,16 @@ class WarehouseController extends Controller
             ->orderBy('first_name')
             ->get(['id', 'first_name', 'last_name', 'display_name', 'employee_code', 'user_id']);
 
+        $locations = WarehouseLocation::query()
+            ->forActivePlant($user)
+            ->orderBy('code')
+            ->get(['id', 'warehouse_id', 'code', 'name', 'status']);
+
         return Inertia::render('warehouses/index', [
             'warehouses' => $query->paginate($perPage)->withQueryString(),
             'warehouseTypes' => $warehouseTypes,
             'managers' => $managers,
+            'locations' => $locations,
             'statuses' => Warehouse::STATUSES,
             'plant' => $user->activePlant?->only(['id', 'name', 'code']),
             'filters' => $request->only([
@@ -151,6 +161,17 @@ class WarehouseController extends Controller
         $user = $request->user();
         if (! $user || ! $this->belongsToActivePlant($user, $warehouse)) {
             abort(403);
+        }
+
+        if ($warehouse->hasTransactions()) {
+            $isCodeChanging = $request->filled('code') && strtoupper(trim((string) $request->input('code'))) !== $warehouse->code;
+            $isTypeChanging = $request->filled('warehouse_type_id') && (int) $request->input('warehouse_type_id') !== (int) $warehouse->warehouse_type_id;
+
+            if ($isCodeChanging || $isTypeChanging) {
+                throw ValidationException::withMessages([
+                    'code' => 'Warehouse code or type cannot be changed because inventory transactions exist for it.',
+                ]);
+            }
         }
 
         $validated = $this->validateWarehouse($request, $user, $warehouse);
@@ -236,6 +257,8 @@ class WarehouseController extends Controller
             'notes' => $request->filled('notes') ? $request->input('notes') : null,
             'allow_negative_stock' => $request->boolean('allow_negative_stock'),
             'is_default' => $request->boolean('is_default'),
+            'default_receiving_location_id' => $request->filled('default_receiving_location_id') ? $request->input('default_receiving_location_id') : null,
+            'default_picking_location_id' => $request->filled('default_picking_location_id') ? $request->input('default_picking_location_id') : null,
         ]);
 
         $uniqueCode = Rule::unique('warehouses', 'code')
@@ -256,6 +279,19 @@ class WarehouseController extends Controller
             $activeType = Rule::exists('warehouse_types', 'id')
                 ->where('organization_id', $user->organization_id)
                 ->whereNull('deleted_at');
+        }
+
+        $receivingRule = Rule::exists('warehouse_locations', 'id')
+            ->where('organization_id', $user->organization_id)
+            ->whereNull('deleted_at');
+
+        $pickingRule = Rule::exists('warehouse_locations', 'id')
+            ->where('organization_id', $user->organization_id)
+            ->whereNull('deleted_at');
+
+        if ($warehouse) {
+            $receivingRule->where('warehouse_id', $warehouse->id);
+            $pickingRule->where('warehouse_id', $warehouse->id);
         }
 
         return $request->validate([
@@ -282,6 +318,16 @@ class WarehouseController extends Controller
             'is_default' => ['sometimes', 'boolean'],
             'notes' => ['nullable', 'string', 'max:5000'],
             'status' => ['required', Rule::in(Warehouse::STATUSES)],
+            'default_receiving_location_id' => [
+                'nullable',
+                'integer',
+                $receivingRule,
+            ],
+            'default_picking_location_id' => [
+                'nullable',
+                'integer',
+                $pickingRule,
+            ],
         ]);
     }
 

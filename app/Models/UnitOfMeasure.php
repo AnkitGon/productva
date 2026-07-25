@@ -39,6 +39,8 @@ class UnitOfMeasure extends Model
         'decimal_places',
         'status',
         'description',
+        'base_unit_id',
+        'conversion_factor',
     ];
 
     /**
@@ -47,6 +49,7 @@ class UnitOfMeasure extends Model
     protected $attributes = [
         'status' => 'Active',
         'decimal_places' => 0,
+        'conversion_factor' => 1.0000,
     ];
 
     /**
@@ -56,6 +59,7 @@ class UnitOfMeasure extends Model
     {
         return [
             'decimal_places' => 'integer',
+            'conversion_factor' => 'float',
         ];
     }
 
@@ -91,5 +95,17 @@ class UnitOfMeasure extends Model
                     ->orWhere('purchase_uom_id', $this->id);
             })
             ->exists();
+    }
+
+    public function baseUnit(): BelongsTo
+    {
+        return $this->belongsTo(UnitOfMeasure::class, 'base_unit_id');
+    }
+
+    public function convertToBase(float $quantity): float
+    {
+        $factor = (float) ($this->conversion_factor ?? 1.0000);
+
+        return $quantity * $factor;
     }
 }

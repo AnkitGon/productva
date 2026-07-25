@@ -65,6 +65,18 @@ interface WarehouseRow {
     manager_employee_id: number | null;
     warehouse_type?: TypeOption | null;
     manager?: ManagerOption | null;
+    default_receiving_location_id: number | null;
+    default_picking_location_id: number | null;
+    default_receiving_location?: { id: number; code: string; name: string } | null;
+    default_picking_location?: { id: number; code: string; name: string } | null;
+}
+
+interface LocationOption {
+    id: number;
+    warehouse_id: number;
+    code: string;
+    name: string;
+    status: string;
 }
 
 interface PaginatedWarehouses {
@@ -81,6 +93,7 @@ interface Props {
     warehouses: PaginatedWarehouses;
     warehouseTypes: TypeOption[];
     managers: ManagerOption[];
+    locations: LocationOption[];
     statuses: string[];
     plant: { id: number; name: string; code: string } | null;
     filters: Record<string, string>;
@@ -103,6 +116,8 @@ type FormData = {
     is_default: boolean;
     notes: string;
     status: string;
+    default_receiving_location_id: string;
+    default_picking_location_id: string;
 };
 
 function managerLabel(manager: ManagerOption): string {
@@ -133,6 +148,8 @@ function emptyForm(): FormData {
         is_default: false,
         notes: '',
         status: 'Active',
+        default_receiving_location_id: '',
+        default_picking_location_id: '',
     };
 }
 
@@ -154,6 +171,8 @@ function formFromWarehouse(row: WarehouseRow): FormData {
         is_default: row.is_default,
         notes: row.notes ?? '',
         status: row.status,
+        default_receiving_location_id: row.default_receiving_location_id?.toString() ?? '',
+        default_picking_location_id: row.default_picking_location_id?.toString() ?? '',
     };
 }
 
@@ -161,6 +180,7 @@ export default function WarehousesIndex({
     warehouses,
     warehouseTypes,
     managers,
+    locations,
     statuses,
     plant,
     filters,
@@ -171,6 +191,11 @@ export default function WarehousesIndex({
     const [deleteConfirm, setDeleteConfirm] = useState<WarehouseRow | null>(null);
     const [selectedManagerLabel, setSelectedManagerLabel] = useState('');
     const form = useForm<FormData>(emptyForm());
+
+    const warehouseLocations = useMemo(() => {
+        if (!editing) return [];
+        return locations.filter((loc) => loc.warehouse_id === editing.id);
+    }, [editing, locations]);
 
     const currentParams: Record<string, string> = {};
     Object.entries(filters ?? {}).forEach(([k, v]) => {
@@ -508,6 +533,52 @@ export default function WarehousesIndex({
                                     />
                                     <Label htmlFor="is_default">Default Warehouse</Label>
                                 </div>
+
+                                {editing && warehouseLocations.length > 0 && (
+                                    <>
+                                        <div className="space-y-2">
+                                            <Label>Default Receiving Location</Label>
+                                            <Select
+                                                value={form.data.default_receiving_location_id || 'none'}
+                                                onValueChange={(v) => form.setData('default_receiving_location_id', v === 'none' ? '' : v)}
+                                            >
+                                                <SelectTrigger className="w-full">
+                                                    <SelectValue placeholder="Select location..." />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="none">None</SelectItem>
+                                                    {warehouseLocations.map((loc) => (
+                                                        <SelectItem key={loc.id} value={loc.id.toString()}>
+                                                            {loc.code} — {loc.name}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                            <InputError message={form.errors.default_receiving_location_id} />
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <Label>Default Picking Location</Label>
+                                            <Select
+                                                value={form.data.default_picking_location_id || 'none'}
+                                                onValueChange={(v) => form.setData('default_picking_location_id', v === 'none' ? '' : v)}
+                                            >
+                                                <SelectTrigger className="w-full">
+                                                    <SelectValue placeholder="Select location..." />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="none">None</SelectItem>
+                                                    {warehouseLocations.map((loc) => (
+                                                        <SelectItem key={loc.id} value={loc.id.toString()}>
+                                                            {loc.code} — {loc.name}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                            <InputError message={form.errors.default_picking_location_id} />
+                                        </div>
+                                    </>
+                                )}
                             </div>
                         </div>
 

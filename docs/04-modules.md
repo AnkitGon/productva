@@ -55,7 +55,7 @@ Feature-by-feature status for every module in ProductVA. Status reflects **what 
 | Employee bulk activate/deactivate/archive | ✅ | |
 | Inactive employee login block | ✅ | |
 | Inactive excluded from assignable pickers | ✅ | |
-| Reporting manager hierarchy | ✅ | With cycle detection gap (M-10) |
+| Reporting manager hierarchy | ✅ | Cycle detection implemented |
 | Shifts CRUD | ✅ | Color field |
 | Shift overlap validation | ❌ | |
 

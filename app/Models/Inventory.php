@@ -30,6 +30,8 @@ class Inventory extends Model
         'serial_number',
         'quantity_on_hand',
         'quantity_reserved',
+        'quantity_incoming',
+        'quantity_outgoing',
         'last_movement_at',
     ];
 
@@ -41,6 +43,8 @@ class Inventory extends Model
         'serial_number' => '',
         'quantity_on_hand' => 0,
         'quantity_reserved' => 0,
+        'quantity_incoming' => 0,
+        'quantity_outgoing' => 0,
     ];
 
     /**
@@ -59,6 +63,8 @@ class Inventory extends Model
         return [
             'quantity_on_hand' => 'decimal:4',
             'quantity_reserved' => 'decimal:4',
+            'quantity_incoming' => 'decimal:4',
+            'quantity_outgoing' => 'decimal:4',
             'last_movement_at' => 'datetime',
         ];
     }

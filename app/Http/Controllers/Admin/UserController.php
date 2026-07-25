@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
+use Illuminate\Validation\ValidationException;
 
 class UserController extends Controller
 {
@@ -87,6 +88,24 @@ class UserController extends Controller
     {
         if (! $user->hasRole('admin')) {
             abort(403, 'Only admin users can be deleted from this panel.');
+        }
+
+        if ($user->id === auth()->id()) {
+            throw ValidationException::withMessages([
+                'user' => 'You cannot delete your own admin account.',
+            ]);
+        }
+
+        $orgAdminCount = User::where('organization_id', $user->organization_id)
+            ->whereHas('roles', function ($query) {
+                $query->where('slug', 'admin');
+            })
+            ->count();
+
+        if ($orgAdminCount <= 1) {
+            throw ValidationException::withMessages([
+                'user' => 'Cannot delete the last admin user of the organization.',
+            ]);
         }
 
         $user->delete();

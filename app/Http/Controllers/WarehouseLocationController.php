@@ -258,6 +258,15 @@ class WarehouseLocationController extends Controller
             return redirect()->back();
         }
 
+        if ($location->hasStock()) {
+            Inertia::flash('toast', [
+                'type' => 'error',
+                'message' => 'Cannot delete this location because it has stock (inventory). Please empty the stock first.',
+            ]);
+
+            return redirect()->back();
+        }
+
         $location->delete();
 
         Inertia::flash('toast', [

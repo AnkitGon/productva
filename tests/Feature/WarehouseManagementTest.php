@@ -1,14 +1,22 @@
 <?php
 
 use App\Models\Employee;
+use App\Models\Inventory;
+use App\Models\InventoryTransaction;
 use App\Models\Organization;
 use App\Models\Permission;
 use App\Models\Plant;
+use App\Models\Product;
+use App\Models\ProductCategory;
 use App\Models\Role;
+use App\Models\UnitOfMeasure;
 use App\Models\User;
 use App\Models\Warehouse;
+use App\Models\WarehouseLocation;
 use App\Models\WarehouseType;
+use App\Services\InventoryService;
 use Database\Seeders\RolesAndPermissionsSeeder;
+use Illuminate\Validation\ValidationException;
 
 beforeEach(function () {
     $this->seed(RolesAndPermissionsSeeder::class);
@@ -280,4 +288,152 @@ test('view-only users cannot mutate warehouses', function () {
         'status' => 'Active',
     ])->assertForbidden();
     $this->actingAs($viewer)->delete(route('warehouses.destroy', $warehouse))->assertForbidden();
+});
+
+test('warehouse business rules: W-2, W-3, W-4', function () {
+    // 1. Create a warehouse
+    $warehouse = createWarehouse($this->admin, $this->plant, $this->rawType);
+
+    // Create a product
+    $category = ProductCategory::create([
+        'organization_id' => $this->org->id,
+        'code' => 'TEST-CAT-'.uniqid(),
+        'name' => 'Test Category',
+        'created_by' => $this->admin->id,
+        'updated_by' => $this->admin->id,
+    ]);
+
+    $uom = UnitOfMeasure::create([
+        'organization_id' => $this->org->id,
+        'code' => 'PCS-'.uniqid(),
+        'name' => 'Pieces',
+        'type' => 'Count',
+        'symbol' => 'pcs',
+        'decimal_places' => 0,
+        'status' => 'Active',
+        'created_by' => $this->admin->id,
+        'updated_by' => $this->admin->id,
+    ]);
+
+    $product = Product::create([
+        'organization_id' => $this->org->id,
+        'sku' => 'TEST-SKU-'.uniqid(),
+        'name' => 'Test Product',
+        'category_id' => $category->id,
+        'uom_id' => $uom->id,
+        'type' => 'Raw Material',
+        'status' => 'Active',
+        'track_inventory' => true,
+        'created_by' => $this->admin->id,
+        'updated_by' => $this->admin->id,
+    ]);
+
+    // Create a location
+    $location = WarehouseLocation::create([
+        'organization_id' => $this->org->id,
+        'warehouse_id' => $warehouse->id,
+        'code' => 'LOC-A',
+        'name' => 'Location A',
+        'created_by' => $this->admin->id,
+        'updated_by' => $this->admin->id,
+    ]);
+
+    // W-2: Warehouse cannot be deleted if inventory exists
+    $inventory = Inventory::create([
+        'organization_id' => $this->org->id,
+        'plant_id' => $this->plant->id,
+        'warehouse_id' => $warehouse->id,
+        'warehouse_location_id' => $location->id,
+        'product_id' => $product->id,
+        'quantity_on_hand' => 10,
+    ]);
+
+    // Verify hasBlockingDependencies returns true
+    expect($warehouse->hasBlockingDependencies())->toBeTrue();
+
+    // Destroy should mark it Inactive rather than deleting it
+    $this->actingAs($this->admin)
+        ->delete(route('warehouses.destroy', $warehouse))
+        ->assertRedirect();
+
+    $warehouse->refresh();
+    expect($warehouse->status)->toBe('Inactive');
+    expect($warehouse->deleted_at)->toBeNull();
+
+    // Reset quantity to 0
+    $inventory->update(['quantity_on_hand' => 0]);
+    expect($warehouse->hasBlockingDependencies())->toBeFalse();
+
+    // W-3: Warehouse cannot be changed if transactions exist
+    // Create an inventory transaction
+    $transaction = InventoryTransaction::create([
+        'organization_id' => $this->org->id,
+        'plant_id' => $this->plant->id,
+        'inventory_id' => $inventory->id,
+        'product_id' => $product->id,
+        'warehouse_id' => $warehouse->id,
+        'warehouse_location_id' => $location->id,
+        'transaction_no' => 'ADJ-000001',
+        'transaction_type' => 'Adjustment',
+        'quantity' => 10,
+        'quantity_before' => 0,
+        'quantity_after' => 10,
+        'created_by' => $this->admin->id,
+        'transacted_at' => now(),
+    ]);
+
+    expect($warehouse->hasTransactions())->toBeTrue();
+
+    // Put request to update the warehouse should fail validation
+    $this->actingAs($this->admin)
+        ->put(route('warehouses.update', $warehouse), [
+            'warehouse_type_id' => $this->rawType->id,
+            'code' => 'RM001-UPD',
+            'name' => 'Updated Name',
+            'status' => 'Active',
+        ])
+        ->assertSessionHasErrors(['code']);
+
+    // W-4: Warehouse status respected in transactions (cannot adjust or transfer on inactive warehouse)
+    // Make the warehouse Inactive
+    $warehouse->update(['status' => 'Inactive']);
+
+    // Attempt adjustment via InventoryService (should throw ValidationException)
+    $service = app(InventoryService::class);
+
+    expect(fn () => $service->adjust($this->admin, [
+        'product_id' => $product->id,
+        'warehouse_id' => $warehouse->id,
+        'warehouse_location_id' => $location->id,
+        'new_quantity' => 20,
+    ]))->toThrow(ValidationException::class);
+
+    // Attempt transfer from/to inactive warehouse
+    $activeWarehouse = createWarehouse($this->admin, $this->plant, $this->rawType, ['code' => 'ACT-01']);
+    $activeLocation = WarehouseLocation::create([
+        'organization_id' => $this->org->id,
+        'warehouse_id' => $activeWarehouse->id,
+        'code' => 'LOC-B',
+        'name' => 'Location B',
+        'created_by' => $this->admin->id,
+        'updated_by' => $this->admin->id,
+    ]);
+
+    expect(fn () => $service->transfer($this->admin, [
+        'product_id' => $product->id,
+        'from_warehouse_id' => $warehouse->id,
+        'from_location_id' => $location->id,
+        'to_warehouse_id' => $activeWarehouse->id,
+        'to_location_id' => $activeLocation->id,
+        'quantity' => 5,
+    ]))->toThrow(ValidationException::class);
+
+    expect(fn () => $service->transfer($this->admin, [
+        'product_id' => $product->id,
+        'from_warehouse_id' => $activeWarehouse->id,
+        'from_location_id' => $activeLocation->id,
+        'to_warehouse_id' => $warehouse->id,
+        'to_location_id' => $location->id,
+        'quantity' => 5,
+    ]))->toThrow(ValidationException::class);
 });
